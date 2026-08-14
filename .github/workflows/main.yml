@@ -34,43 +34,54 @@ jobs:
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
         run: |
           python - <<'PYEOF'
-          import requests, os, random, time, shutil
+          import requests, os, random, time
           from pathlib import Path
 
           API_KEY = os.environ["PEXELS_API_KEY"]
           HEADERS = {"Authorization": API_KEY}
 
-          QUERIES_BY_FOLDER = {
-              "assets/videos_lofi": [
-                  "rain window night dark",
-                  "rain falling on glass window",
-                  "rain drops window close up",
-                  "dark rainy night window",
-                  "cozy room rain outside",
-              ],
-              "assets/videos_lluvia": [
-                  "heavy rain falling street",
-                  "rain storm window",
-                  "rain drops glass close",
-                  "rainy day window view",
-                  "rain puddle drops",
-              ],
-              "assets/videos_naturaleza": [
-                  "forest rain nature",
-                  "river flowing nature",
-                  "waterfall nature peaceful",
-                  "nature rain trees",
-                  "ocean waves calm",
-              ],
+          VIDEO_MAP = {
+              "assets/videos_lofi": {
+                  "orientation": "landscape",
+                  "queries": [
+                      "study desk lamp night",
+                      "coffee shop window night",
+                      "cozy room reading lamp",
+                      "desk books coffee lamp",
+                      "night room lamp warm light",
+                  ]
+              },
+              "assets/videos_lluvia": {
+                  "orientation": "landscape",
+                  "queries": [
+                      "rain drops window glass",
+                      "heavy rain falling street night",
+                      "rain window close up drops",
+                      "rain storm city night",
+                      "rain puddle street night",
+                  ]
+              },
+              "assets/videos_naturaleza": {
+                  "orientation": "landscape",
+                  "queries": [
+                      "forest rain trees nature",
+                      "waterfall river nature calm",
+                      "ocean waves shore peaceful",
+                      "river stream forest",
+                      "nature rain green trees",
+                  ]
+              },
+              "assets/videos_vertical": {
+                  "orientation": "portrait",
+                  "queries": [
+                      "rain window vertical drops",
+                      "rain falling vertical close",
+                      "candle flame close vertical",
+                      "forest rain vertical nature",
+                      "night rain street vertical",
+                  ]
+              },
           }
-
-          QUERIES_VERTICAL = [
-              "rain window vertical",
-              "rain falling vertical slow",
-              "nature rain vertical",
-              "forest rain vertical",
-              "rain drops vertical close",
-          ]
 
           def get_best_url(video_files, orientation):
               if orientation == "landscape":
@@ -108,9 +119,9 @@ jobs:
                   size_mb = total / (1024*1024)
                   if size_mb < 1.0:
                       os.remove(out_path)
-                      print(f"  Descartado (muy pequeño {size_mb:.1f}MB)")
+                      print(f"  Descartado ({size_mb:.1f}MB muy pequeño)")
                       return False
-                  print(f"  OK {size_mb:.1f}MB → {out_path}")
+                  print(f"  ✓ {size_mb:.1f}MB → {out_path}")
                   return True
               except Exception as e:
                   print(f"  Error: {e}")
@@ -118,14 +129,14 @@ jobs:
                       os.remove(out_path)
                   return False
 
-          def fetch_videos(queries, folder, orientation, target=5):
+          def fetch_videos(folder, orientation, queries, target=4):
               Path(folder).mkdir(parents=True, exist_ok=True)
               downloaded = 0
               random.shuffle(queries)
               for query in queries:
                   if downloaded >= target:
                       break
-                  print(f"Buscando '{query}' ({orientation})...")
+                  print(f"[{folder}] Buscando: '{query}'")
                   try:
                       r = requests.get(
                           "https://api.pexels.com/videos/search",
@@ -135,8 +146,7 @@ jobs:
                               "per_page": 10,
                               "orientation": orientation,
                               "size": "large",
-                              "min_duration": 5,
-                              "max_duration": 60,
+                              "min_duration": 8,
                           },
                           timeout=30
                       )
@@ -147,7 +157,7 @@ jobs:
                       for v in videos:
                           if downloaded >= target:
                               break
-                          if v.get("duration", 0) < 5:
+                          if v.get("duration", 0) < 8:
                               continue
                           url = get_best_url(v.get("video_files", []), orientation)
                           if not url:
@@ -160,24 +170,19 @@ jobs:
                               downloaded += 1
                       time.sleep(0.5)
                   except Exception as e:
-                      print(f"  Error query '{query}': {e}")
+                      print(f"  Error: {e}")
                       time.sleep(2)
-              print(f"Total {orientation} en {folder}: {downloaded}")
+              print(f"  Total en {folder}: {downloaded}\n")
               return downloaded
 
-          total_h = 0
-          for folder, queries in QUERIES_BY_FOLDER.items():
-              n = fetch_videos(queries, folder, "landscape", target=4)
-              total_h += n
+          total = 0
+          for folder, cfg in VIDEO_MAP.items():
+              n = fetch_videos(folder, cfg["orientation"], cfg["queries"], target=4)
+              total += n
 
-          total_v = fetch_videos(QUERIES_VERTICAL, "assets/videos_vertical", "portrait", target=5)
-
-          if total_h == 0:
-              raise Exception("No se descargaron videos horizontales")
-          if total_v == 0:
-              raise Exception("No se descargaron videos verticales")
-
-          print(f"=== Total: {total_h} horizontales, {total_v} verticales ===")
+          if total == 0:
+              raise Exception("No se descargaron videos")
+          print(f"=== Descarga completa: {total} videos ===")
           PYEOF
 
       - name: Preparar assets audio
