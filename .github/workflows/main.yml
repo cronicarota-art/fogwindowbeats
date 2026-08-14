@@ -10,6 +10,7 @@ on:
 jobs:
   run-pipeline:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,62 +29,152 @@ jobs:
       - name: Restaurar token
         run: echo "${{ secrets.YOUTUBE_TOKEN }}" | base64 -d > token.pickle
 
-      - name: Descargar videos Pexels
+      - name: Descargar videos Pexels HD
         env:
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
         run: |
-          python - <<'EOF'
-          import requests, os, random
+          python - <<'PYEOF'
+          import requests, os, random, time
           from pathlib import Path
 
-          api_key = os.environ["PEXELS_API_KEY"]
-          headers = {"Authorization": api_key}
+          API_KEY = os.environ["PEXELS_API_KEY"]
+          HEADERS = {"Authorization": API_KEY}
 
-          queries_h = ["rain window night", "coffee shop rainy", "lofi aesthetic desk", "night city rain", "cozy room lamp"]
-          queries_v = ["rain vertical", "nature vertical", "night vertical lofi", "cozy aesthetic vertical", "foggy forest vertical"]
+          QUERIES_H = [
+              "rain on window night",
+              "coffee shop rainy window",
+              "cozy room night lamp",
+              "city rain night street",
+              "study desk lamp night",
+              "lofi aesthetic room",
+              "foggy forest rain"
+          ]
 
-          def download_videos(queries, folder, orientation="landscape", count=3):
+          QUERIES_V = [
+              "rain falling vertical",
+              "nature waterfall vertical",
+              "night city vertical",
+              "foggy forest vertical",
+              "cozy window rain vertical",
+              "candle flame close up",
+              "steam coffee cup close"
+          ]
+
+          def get_best_video_url(video_files, orientation):
+              if orientation == "landscape":
+                  preferred = [f for f in video_files
+                               if f.get("width", 0) >= 1920
+                               and f.get("height", 0) <= 1080
+                               and f.get("file_type") == "video/mp4"]
+                  if not preferred:
+                      preferred = [f for f in video_files
+                                   if f.get("width", 0) >= 1280
+                                   and f.get("file_type") == "video/mp4"]
+              else:
+                  preferred = [f for f in video_files
+                               if f.get("height", 0) >= 1920
+                               and f.get("width", 0) <= 1080
+                               and f.get("file_type") == "video/mp4"]
+                  if not preferred:
+                      preferred = [f for f in video_files
+                                   if f.get("height", 0) >= f.get("width", 1)
+                                   and f.get("file_type") == "video/mp4"]
+              if not preferred:
+                  preferred = [f for f in video_files if f.get("file_type") == "video/mp4"]
+              if not preferred:
+                  preferred = video_files
+              preferred.sort(key=lambda x: x.get("width", 0) * x.get("height", 0), reverse=True)
+              return preferred[0]["link"] if preferred else None
+
+          def download_video(url, out_path):
+              try:
+                  resp = requests.get(url, stream=True, timeout=60)
+                  resp.raise_for_status()
+                  total = 0
+                  with open(out_path, "wb") as f:
+                      for chunk in resp.iter_content(chunk_size=1024*1024):
+                          f.write(chunk)
+                          total += len(chunk)
+                  size_mb = total / (1024*1024)
+                  if size_mb < 0.5:
+                      os.remove(out_path)
+                      print(f"  Descartado (muy pequeño: {size_mb:.1f}MB): {out_path}")
+                      return False
+                  print(f"  OK {size_mb:.1f}MB → {out_path}")
+                  return True
+              except Exception as e:
+                  print(f"  Error descargando {url}: {e}")
+                  if os.path.exists(out_path):
+                      os.remove(out_path)
+                  return False
+
+          def fetch_videos(queries, folder, orientation, target=5):
               Path(folder).mkdir(parents=True, exist_ok=True)
               downloaded = 0
+              random.shuffle(queries)
               for query in queries:
-                  if downloaded >= count:
+                  if downloaded >= target:
                       break
+                  print(f"Buscando '{query}' ({orientation})...")
                   try:
                       r = requests.get(
                           "https://api.pexels.com/videos/search",
-                          headers=headers,
-                          params={"query": query, "per_page": 5, "orientation": orientation}
+                          headers=HEADERS,
+                          params={
+                              "query": query,
+                              "per_page": 8,
+                              "orientation": orientation,
+                              "size": "large"
+                          },
+                          timeout=30
                       )
-                      videos = r.json().get("videos", [])
+                      r.raise_for_status()
+                      data = r.json()
+                      videos = data.get("videos", [])
+                      print(f"  Encontrados: {len(videos)}")
                       random.shuffle(videos)
                       for v in videos:
-                          if downloaded >= count:
+                          if downloaded >= target:
                               break
-                          files = [f for f in v["video_files"] if f["quality"] == "hd"]
-                          if not files:
-                              files = v["video_files"]
-                          if files:
-                              url = files[0]["link"]
-                              out = f"{folder}/pexels_{v['id']}.mp4"
-                              resp = requests.get(url, stream=True)
-                              with open(out, "wb") as f:
-                                  for chunk in resp.iter_content(chunk_size=1024*1024):
-                                      f.write(chunk)
-                              print(f"Downloaded: {out}")
+                          duration = v.get("duration", 0)
+                          if duration < 5:
+                              continue
+                          url = get_best_video_url(v.get("video_files", []), orientation)
+                          if not url:
+                              continue
+                          out = f"{folder}/pexels_{v['id']}.mp4"
+                          if Path(out).exists():
+                              print(f"  Ya existe: {out}")
                               downloaded += 1
+                              continue
+                          if download_video(url, out):
+                              downloaded += 1
+                      time.sleep(1)
                   except Exception as e:
-                      print(f"Error: {e}")
-              print(f"Total downloaded to {folder}: {downloaded}")
+                      print(f"  Error en query '{query}': {e}")
+                      time.sleep(2)
+              print(f"Total {orientation} en {folder}: {downloaded}")
+              return downloaded
 
-          download_videos(queries_h, "assets/videos_lofi", "landscape", 4)
-          download_videos(queries_v, "assets/videos_vertical", "portrait", 4)
+          print("=== Descargando horizontales (16:9) ===")
+          h = fetch_videos(QUERIES_H, "assets/videos_lofi", "landscape", target=5)
 
-          for dir in ["assets/videos_lluvia", "assets/videos_naturaleza"]:
-              import shutil
-              Path(dir).mkdir(parents=True, exist_ok=True)
+          print("=== Descargando verticales (9:16) ===")
+          v = fetch_videos(QUERIES_V, "assets/videos_vertical", "portrait", target=5)
+
+          import shutil
+          for d in ["assets/videos_lluvia", "assets/videos_naturaleza"]:
+              Path(d).mkdir(parents=True, exist_ok=True)
               for f in Path("assets/videos_lofi").glob("*.mp4"):
-                  shutil.copy(f, dir)
-          EOF
+                  shutil.copy(f, d)
+
+          if h == 0:
+              raise Exception("No se descargaron videos horizontales")
+          if v == 0:
+              raise Exception("No se descargaron videos verticales")
+
+          print("=== Descarga completada ===")
+          PYEOF
 
       - name: Preparar assets audio
         run: |
