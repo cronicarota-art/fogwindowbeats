@@ -355,16 +355,16 @@ def pipeline_largo(tipo, service, tmp):
     video_raw = tmp / "video_raw.mp4"
     video_final = tmp / "video_final.mp4"
     thumbnail = tmp / "thumbnail.jpg"
-    send_telegram(f"ðŸŽµ LARGO iniciando\nTipo: {tipo} | {duration_h}h")
+    send_telegram(f"Ã°Å¸Å½Âµ LARGO iniciando\nTipo: {tipo} | {duration_h}h")
     build_audio(tipo, duration, audio_out)
-    send_telegram("ðŸŽ¬ Construyendo video...")
+    send_telegram("Ã°Å¸Å½Â¬ Construyendo video...")
     build_video_horizontal(tipo, duration, video_raw)
-    send_telegram("ðŸ”— Mezclando AV...")
+    send_telegram("Ã°Å¸â€â€” Mezclando AV...")
     merge_av(video_raw, audio_out, video_final)
-    send_telegram("ðŸ–¼ Metadata + thumbnail...")
+    send_telegram("Ã°Å¸â€“Â¼ Metadata + thumbnail...")
     metadata = generate_metadata_largo(tipo, duration_h)
     create_thumbnail_largo(tipo, metadata["titulo"], duration_h, video_raw, thumbnail)
-    send_telegram("ðŸ“¤ Subiendo a YouTube...")
+    send_telegram("Ã°Å¸â€œÂ¤ Subiendo a YouTube...")
     video_id = upload_youtube(service, video_final, thumbnail, metadata)
     for f in [audio_out, video_raw, video_final, thumbnail]:
         try: f.unlink()
@@ -379,16 +379,16 @@ def pipeline_short(tipo, service, tmp):
     video_raw = tmp / "video_raw_s.mp4"
     video_final = tmp / "video_final_s.mp4"
     thumbnail = tmp / "thumbnail_s.jpg"
-    send_telegram(f"ðŸ“± SHORT iniciando\nFrase: {frase}")
+    send_telegram(f"Ã°Å¸â€œÂ± SHORT iniciando\nFrase: {frase}")
     build_audio(tipo, duration, audio_out)
-    send_telegram("ðŸŽ¬ Video vertical...")
+    send_telegram("Ã°Å¸Å½Â¬ Video vertical...")
     build_video_vertical(tipo, duration, video_raw)
-    send_telegram("ðŸ”— Mezclando AV...")
+    send_telegram("Ã°Å¸â€â€” Mezclando AV...")
     merge_av(video_raw, audio_out, video_final)
-    send_telegram("ðŸ–¼ Metadata + thumbnail...")
+    send_telegram("Ã°Å¸â€“Â¼ Metadata + thumbnail...")
     metadata = generate_metadata_short(tipo, frase)
     create_thumbnail_short(tipo, frase, video_raw, thumbnail)
-    send_telegram("ðŸ“¤ Subiendo Short...")
+    send_telegram("Ã°Å¸â€œÂ¤ Subiendo Short...")
     video_id = upload_youtube(service, video_final, thumbnail, metadata)
     for f in [audio_out, video_raw, video_final, thumbnail]:
         try: f.unlink()
@@ -396,27 +396,28 @@ def pipeline_short(tipo, service, tmp):
     return video_id, metadata["titulo"]
 
 def main():
-    tipo_largo = random.choice(TIPOS)
-    tipo_short = random.choice(TIPOS)
-    send_telegram(f"ðŸš€ FogWindowBeats arrancando\nLARGO: {tipo_largo}\nSHORT: {tipo_short}")
+    env_tipo = os.environ.get("VIDEO_TIPO")
+    tipo_largo = env_tipo if env_tipo else random.choice(TIPOS)
+    tipo_short = env_tipo if env_tipo else random.choice(TIPOS)
+    send_telegram(f"Ã°Å¸Å¡â‚¬ FogWindowBeats arrancando\nLARGO: {tipo_largo}\nSHORT: {tipo_short}")
     tmp = BASE / "tmp"
     tmp.mkdir(exist_ok=True)
     service = get_youtube_service()
     try:
         vid_l, titulo_l = pipeline_largo(tipo_largo, service, tmp)
         url_l = f"https://youtu.be/{vid_l}"
-        send_telegram(f"âœ… LARGO publicado\n{titulo_l}\n{url_l}")
-        print(f"âœ… LARGO: {url_l}")
+        send_telegram(f"Ã¢Å“â€¦ LARGO publicado\n{titulo_l}\n{url_l}")
+        print(f"Ã¢Å“â€¦ LARGO: {url_l}")
     except Exception as e:
-        send_telegram(f"âŒ Error LARGO: {e}")
+        send_telegram(f"Ã¢ÂÅ’ Error LARGO: {e}")
         print(f"ERROR LARGO: {e}")
     try:
         vid_s, titulo_s = pipeline_short(tipo_short, service, tmp)
         url_s = f"https://youtube.com/shorts/{vid_s}"
-        send_telegram(f"âœ… SHORT publicado\n{titulo_s}\n{url_s}")
-        print(f"âœ… SHORT: {url_s}")
+        send_telegram(f"Ã¢Å“â€¦ SHORT publicado\n{titulo_s}\n{url_s}")
+        print(f"Ã¢Å“â€¦ SHORT: {url_s}")
     except Exception as e:
-        send_telegram(f"âŒ Error SHORT: {e}")
+        send_telegram(f"Ã¢ÂÅ’ Error SHORT: {e}")
         print(f"ERROR SHORT: {e}")
 
 if __name__ == "__main__":
