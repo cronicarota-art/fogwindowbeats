@@ -20,12 +20,21 @@ jobs:
           python-version: '3.11'
 
       - name: Instalar dependencias
-        run: |
-          pip install groq google-auth-oauthlib google-api-python-client requests pillow
+        run: pip install groq google-auth-oauthlib google-api-python-client requests pillow
+
+      - name: Instalar FFmpeg
+        run: sudo apt-get install -y ffmpeg
 
       - name: Restaurar token
+        run: echo "${{ secrets.YOUTUBE_TOKEN }}" | base64 -d > token.pickle
+
+      - name: Preparar assets
         run: |
-          echo "${{ secrets.YOUTUBE_TOKEN }}" | base64 -d > token.pickle
+          cp -r assets/audio_small/* assets/audio_lofi/ 2>/dev/null || true
+          cp -r assets/audio_small/* assets/audio_jazz/ 2>/dev/null || true
+          cp -r assets/audio_small/* assets/audio_piano/ 2>/dev/null || true
+          cp -r assets/videos_small/* assets/videos_lofi/ 2>/dev/null || true
+          cp -r assets/videos_small/* assets/videos_naturaleza/ 2>/dev/null || true
 
       - name: Ejecutar pipeline
         env:
