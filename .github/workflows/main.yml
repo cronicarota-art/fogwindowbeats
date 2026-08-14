@@ -38,6 +38,8 @@ jobs:
             mkdir -p $dir
             cp assets/videos_small/* $dir/ 2>/dev/null || true
           done
+          mkdir -p assets/videos_vertical
+          cp assets/videos_vertical_small/* assets/videos_vertical/ 2>/dev/null || true
 
       - name: Ejecutar pipeline
         env:
