@@ -84,12 +84,21 @@ def get_audio_files(tipo):
     return files
 
 def get_video_files(tipo):
+    env_folder = os.environ.get("VIDEO_TIPO_H")
+    if env_folder and Path(env_folder).exists():
+        files = glob.glob(f"{env_folder}/*.mp4")
+        if files:
+            return files
     folder = VIDEO_MAP[tipo]
     files = glob.glob(str(ASSETS / folder / "*.mp4"))
-    files += glob.glob(str(ASSETS / folder / "*.mov"))
     return files
 
 def get_video_files_vertical():
+    env_folder = os.environ.get("VIDEO_TIPO_V")
+    if env_folder and Path(env_folder).exists():
+        files = glob.glob(f"{env_folder}/*.mp4")
+        if files:
+            return files
     return glob.glob(str(ASSETS / "videos_vertical" / "*.mp4"))
 
 def run_ffmpeg(args):
@@ -346,16 +355,16 @@ def pipeline_largo(tipo, service, tmp):
     video_raw = tmp / "video_raw.mp4"
     video_final = tmp / "video_final.mp4"
     thumbnail = tmp / "thumbnail.jpg"
-    send_telegram(f"🎵 LARGO iniciando\nTipo: {tipo} | {duration_h}h")
+    send_telegram(f"ðŸŽµ LARGO iniciando\nTipo: {tipo} | {duration_h}h")
     build_audio(tipo, duration, audio_out)
-    send_telegram("🎬 Construyendo video...")
+    send_telegram("ðŸŽ¬ Construyendo video...")
     build_video_horizontal(tipo, duration, video_raw)
-    send_telegram("🔗 Mezclando AV...")
+    send_telegram("ðŸ”— Mezclando AV...")
     merge_av(video_raw, audio_out, video_final)
-    send_telegram("🖼 Metadata + thumbnail...")
+    send_telegram("ðŸ–¼ Metadata + thumbnail...")
     metadata = generate_metadata_largo(tipo, duration_h)
     create_thumbnail_largo(tipo, metadata["titulo"], duration_h, video_raw, thumbnail)
-    send_telegram("📤 Subiendo a YouTube...")
+    send_telegram("ðŸ“¤ Subiendo a YouTube...")
     video_id = upload_youtube(service, video_final, thumbnail, metadata)
     for f in [audio_out, video_raw, video_final, thumbnail]:
         try: f.unlink()
@@ -370,16 +379,16 @@ def pipeline_short(tipo, service, tmp):
     video_raw = tmp / "video_raw_s.mp4"
     video_final = tmp / "video_final_s.mp4"
     thumbnail = tmp / "thumbnail_s.jpg"
-    send_telegram(f"📱 SHORT iniciando\nFrase: {frase}")
+    send_telegram(f"ðŸ“± SHORT iniciando\nFrase: {frase}")
     build_audio(tipo, duration, audio_out)
-    send_telegram("🎬 Video vertical...")
+    send_telegram("ðŸŽ¬ Video vertical...")
     build_video_vertical(tipo, duration, video_raw)
-    send_telegram("🔗 Mezclando AV...")
+    send_telegram("ðŸ”— Mezclando AV...")
     merge_av(video_raw, audio_out, video_final)
-    send_telegram("🖼 Metadata + thumbnail...")
+    send_telegram("ðŸ–¼ Metadata + thumbnail...")
     metadata = generate_metadata_short(tipo, frase)
     create_thumbnail_short(tipo, frase, video_raw, thumbnail)
-    send_telegram("📤 Subiendo Short...")
+    send_telegram("ðŸ“¤ Subiendo Short...")
     video_id = upload_youtube(service, video_final, thumbnail, metadata)
     for f in [audio_out, video_raw, video_final, thumbnail]:
         try: f.unlink()
@@ -389,25 +398,25 @@ def pipeline_short(tipo, service, tmp):
 def main():
     tipo_largo = random.choice(TIPOS)
     tipo_short = random.choice(TIPOS)
-    send_telegram(f"🚀 FogWindowBeats arrancando\nLARGO: {tipo_largo}\nSHORT: {tipo_short}")
+    send_telegram(f"ðŸš€ FogWindowBeats arrancando\nLARGO: {tipo_largo}\nSHORT: {tipo_short}")
     tmp = BASE / "tmp"
     tmp.mkdir(exist_ok=True)
     service = get_youtube_service()
     try:
         vid_l, titulo_l = pipeline_largo(tipo_largo, service, tmp)
         url_l = f"https://youtu.be/{vid_l}"
-        send_telegram(f"✅ LARGO publicado\n{titulo_l}\n{url_l}")
-        print(f"✅ LARGO: {url_l}")
+        send_telegram(f"âœ… LARGO publicado\n{titulo_l}\n{url_l}")
+        print(f"âœ… LARGO: {url_l}")
     except Exception as e:
-        send_telegram(f"❌ Error LARGO: {e}")
+        send_telegram(f"âŒ Error LARGO: {e}")
         print(f"ERROR LARGO: {e}")
     try:
         vid_s, titulo_s = pipeline_short(tipo_short, service, tmp)
         url_s = f"https://youtube.com/shorts/{vid_s}"
-        send_telegram(f"✅ SHORT publicado\n{titulo_s}\n{url_s}")
-        print(f"✅ SHORT: {url_s}")
+        send_telegram(f"âœ… SHORT publicado\n{titulo_s}\n{url_s}")
+        print(f"âœ… SHORT: {url_s}")
     except Exception as e:
-        send_telegram(f"❌ Error SHORT: {e}")
+        send_telegram(f"âŒ Error SHORT: {e}")
         print(f"ERROR SHORT: {e}")
 
 if __name__ == "__main__":
