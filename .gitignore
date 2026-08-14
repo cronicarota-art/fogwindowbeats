@@ -1,0 +1,14 @@
+venv/
+token.pickle
+scripts/client_secrets.json
+tmp/
+assets/audio_lofi/*
+assets/audio_lluvia/*
+assets/audio_naturaleza/*
+assets/audio_jazz/*
+assets/audio_piano/*
+assets/videos_lofi/*
+assets/videos_lluvia/*
+assets/videos_naturaleza/*
+__pycache__/
+*.pyc
