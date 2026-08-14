@@ -12,14 +12,9 @@ GROQ_API_KEY = os.environ["GROQ_API_KEY"]
 TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
-TEST_MODE = os.environ.get("TEST_MODE", "0") == "1"
+TIPOS = ["lofi_estudio", "lluvia_lofi", "jazz_lofi", "naturaleza", "lofi_dormir", "piano_relajante"]
 
-TIPOS = [
-    "lofi_estudio", "lluvia_lofi", "jazz_lofi",
-    "naturaleza", "lofi_dormir", "piano_relajante"
-]
-
-DURACIONES_LARGO = [7200, 10800, 14400, 21600, 28800]
+DURACIONES_LARGO = [7200, 10800, 14400, 21600]
 DURACIONES_SHORT = [30, 45, 60]
 
 AUDIO_MAP = {
@@ -31,24 +26,43 @@ AUDIO_MAP = {
     "piano_relajante": "audio_piano"
 }
 
+VIDEO_MAP = {
+    "lofi_estudio":    "videos_lofi",
+    "lluvia_lofi":     "videos_lluvia",
+    "jazz_lofi":       "videos_lofi",
+    "naturaleza":      "videos_naturaleza",
+    "lofi_dormir":     "videos_lofi",
+    "piano_relajante": "videos_naturaleza"
+}
+
 FRASES_SHORT = [
-    "cuando necesitas concentrarte Ã°Å¸Å½Â§",
-    "la playlist perfecta para estudiar Ã°Å¸â€œÅ¡",
-    "pon esto y desaparece del mundo Ã°Å¸Å’â„¢",
-    "tu brain en modo focus Ã°Å¸Â§Â ",
-    "lluvia + lofi = productividad infinita Ã°Å¸Å’Â§Ã¯Â¸Â",
-    "el vibe que necesitas ahora mismo Ã¢Å“Â¨",
-    "para cuando todo lo demÃƒÂ¡s falla Ã°Å¸Å½Âµ",
-    "silencia el ruido, enciende el flow Ã°Å¸â€Â¥",
-    "3am study session hits different Ã°Å¸Å’Æ’",
-    "el soundtrack de tu mejor dia Ã°Å¸â€™Â«"
+    "cuando necesitas concentrarte",
+    "la playlist perfecta para estudiar",
+    "pon esto y desaparece del mundo",
+    "tu brain en modo focus",
+    "lluvia para concentrarse",
+    "el vibe que necesitas ahora mismo",
+    "para cuando todo lo demas falla",
+    "silencia el ruido enciende el flow",
+    "3am study session hits different",
+    "el soundtrack de tu mejor dia"
 ]
+
+ETIQUETAS = {
+    "lofi_estudio":    "lofi para estudiar",
+    "lluvia_lofi":     "lluvia + lofi",
+    "jazz_lofi":       "jazz lofi",
+    "naturaleza":      "naturaleza relajante",
+    "lofi_dormir":     "lofi para dormir",
+    "piano_relajante": "piano relajante"
+}
 
 def send_telegram(msg):
     try:
         requests.post(
             f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-            data={"chat_id": TELEGRAM_CHAT_ID, "text": msg, "parse_mode": "HTML"}
+            data={"chat_id": TELEGRAM_CHAT_ID, "text": msg, "parse_mode": "HTML"},
+            timeout=10
         )
     except:
         pass
@@ -69,13 +83,13 @@ def get_audio_files(tipo):
     files += glob.glob(str(ASSETS / folder / "*.wav"))
     return files
 
-def get_video_files_h():
-    files = glob.glob(str(ASSETS / "videos_lofi" / "*.mp4"))
-    files += glob.glob(str(ASSETS / "videos_naturaleza" / "*.mp4"))
-    files += glob.glob(str(ASSETS / "videos_lluvia" / "*.mp4"))
+def get_video_files(tipo):
+    folder = VIDEO_MAP[tipo]
+    files = glob.glob(str(ASSETS / folder / "*.mp4"))
+    files += glob.glob(str(ASSETS / folder / "*.mov"))
     return files
 
-def get_video_files_v():
+def get_video_files_vertical():
     return glob.glob(str(ASSETS / "videos_vertical" / "*.mp4"))
 
 def run_ffmpeg(args):
@@ -110,10 +124,10 @@ def build_audio(tipo, duration, output_path):
     ])
     concat_list.unlink(missing_ok=True)
 
-def build_video_horizontal(duration, output_path):
-    video_files = get_video_files_h()
+def build_video_horizontal(tipo, duration, output_path):
+    video_files = get_video_files(tipo)
     if not video_files:
-        raise Exception("No hay videos horizontales")
+        raise Exception(f"No hay videos para {tipo}")
     random.shuffle(video_files)
     concat_list = BASE / "video_concat.txt"
     selected = []
@@ -137,8 +151,10 @@ def build_video_horizontal(duration, output_path):
     ])
     concat_list.unlink(missing_ok=True)
 
-def build_video_vertical(duration, frase, output_path):
-    video_files = get_video_files_v()
+def build_video_vertical(tipo, duration, output_path):
+    video_files = get_video_files_vertical()
+    if not video_files:
+        video_files = get_video_files(tipo)
     if not video_files:
         raise Exception("No hay videos verticales")
     random.shuffle(video_files)
@@ -173,127 +189,126 @@ def merge_av(video_path, audio_path, output_path):
         "-shortest", str(output_path)
     ])
 
+def extract_frame(video_path, output_path, width, height):
+    run_ffmpeg([
+        "ffmpeg", "-y",
+        "-i", str(video_path),
+        "-ss", "00:00:03",
+        "-vframes", "1",
+        "-vf", f"scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height}",
+        str(output_path)
+    ])
+
+def create_thumbnail_largo(tipo, titulo, duration_h, video_path, output_path):
+    frame_path = output_path.parent / "frame_tmp.jpg"
+    try:
+        extract_frame(video_path, frame_path, 1280, 720)
+        img = Image.open(str(frame_path)).convert("RGB")
+        img = img.resize((1280, 720))
+    except:
+        img = Image.new("RGB", (1280, 720), color=(10, 8, 25))
+    draw = ImageDraw.Draw(img)
+    overlay = Image.new("RGBA", (1280, 720), (0, 0, 0, 140))
+    img = img.convert("RGBA")
+    img = Image.alpha_composite(img, overlay)
+    img = img.convert("RGB")
+    draw = ImageDraw.Draw(img)
+    try:
+        font_big = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 72)
+        font_med = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 48)
+        font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 32)
+    except:
+        font_big = ImageFont.load_default()
+        font_med = font_big
+        font_small = font_big
+    badge = f"{duration_h}H"
+    draw.ellipse([(30, 25), (130, 125)], fill=(255, 200, 0))
+    draw.text((80, 75), badge, font=font_med, fill=(20, 10, 50), anchor="mm")
+    titulo_clean = titulo.encode("ascii", "ignore").decode()
+    lines = textwrap.wrap(titulo_clean, width=22)
+    y = 220
+    for line in lines[:3]:
+        draw.text((640, y), line, font=font_big, fill=(255, 255, 255), anchor="mm",
+                  stroke_width=3, stroke_fill=(0, 0, 0))
+        y += 90
+    draw.rectangle([(0, 630), (1280, 720)], fill=(0, 0, 0, 200))
+    etiqueta = ETIQUETAS.get(tipo, "lofi beats")
+    draw.text((640, 675), etiqueta, font=font_med, fill=(200, 220, 255), anchor="mm")
+    draw.text((1240, 710), "FogWindowBeats", font=font_small, fill=(150, 150, 200), anchor="rm")
+    img.save(str(output_path), "JPEG", quality=95)
+    if frame_path.exists():
+        frame_path.unlink()
+
+def create_thumbnail_short(tipo, frase, video_path, output_path):
+    frame_path = output_path.parent / "frame_s_tmp.jpg"
+    try:
+        extract_frame(video_path, frame_path, 1080, 1920)
+        img = Image.open(str(frame_path)).convert("RGB")
+        img = img.resize((1080, 1920))
+    except:
+        img = Image.new("RGB", (1080, 1920), color=(10, 8, 25))
+    overlay = Image.new("RGBA", (1080, 1920), (0, 0, 0, 120))
+    img = img.convert("RGBA")
+    img = Image.alpha_composite(img, overlay)
+    img = img.convert("RGB")
+    draw = ImageDraw.Draw(img)
+    try:
+        font_big = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 80)
+        font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 45)
+    except:
+        font_big = ImageFont.load_default()
+        font_small = font_big
+    frase_clean = frase.encode("ascii", "ignore").decode()
+    lines = textwrap.wrap(frase_clean, width=18)
+    y = 820
+    for line in lines:
+        draw.text((540, y), line, font=font_big, fill=(255, 255, 255), anchor="mm",
+                  stroke_width=4, stroke_fill=(0, 0, 0))
+        y += 100
+    draw.text((540, 1860), "FogWindowBeats", font=font_small, fill=(180, 180, 255), anchor="mm")
+    img.save(str(output_path), "JPEG", quality=95)
+    if frame_path.exists():
+        frame_path.unlink()
+
 def generate_metadata_largo(tipo, duration_h):
     client = Groq(api_key=GROQ_API_KEY)
     timestamps = ""
-    for i in range(0, int(duration_h * 60), 15):
+    mins = int(duration_h * 60)
+    for i in range(0, mins, 15):
         h = i // 60
         m = i % 60
         timestamps += f"{h:02d}:{m:02d}:00 - Lofi Mix\n"
-    prompt = f"""Genera metadata para YouTube, video de musica lofi tipo "{tipo}", duracion {duration_h} horas.
+    prompt = f"""Genera metadata para YouTube de musica lofi tipo "{tipo}", duracion {duration_h} horas.
 JSON con:
-- titulo: max 80 chars, emoji, en espaÃƒÂ±ol, SEO agresivo (incluye duracion: "{duration_h} horas")
-- descripcion: 400 palabras, incluye estos timestamps:\n{timestamps}\nhashtags al final
-- tags: 20 tags en espaÃƒÂ±ol e ingles, lofi, estudio, concentracion, trabajar, dormir
+- titulo: max 80 chars, emoji relevante, en espanol, SEO, incluye "{duration_h} horas"
+- descripcion: 400 palabras, timestamps:\n{timestamps}\nhashtags al final
+- tags: lista de 20 strings lofi SEO en espanol e ingles
 """
-    response = client.chat.completions.create(
+    r = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
         max_tokens=1200
     )
-    return json.loads(response.choices[0].message.content, strict=False)
+    return json.loads(r.choices[0].message.content, strict=False)
 
 def generate_metadata_short(tipo, frase):
     client = Groq(api_key=GROQ_API_KEY)
-    prompt = f"""Genera metadata para un YouTube Short de musica lofi, tipo "{tipo}".
-Frase del video: "{frase}"
+    prompt = f"""Genera metadata para YouTube Short de lofi tipo "{tipo}", frase "{frase}".
 JSON con:
-- titulo: max 60 chars, viral, emoji, en espaÃƒÂ±ol, para Short de lofi
-- descripcion: 3 lineas cortas + hashtags #lofi #shorts #estudiar #concentracion
-- tags: 10 tags cortos lofi shorts
+- titulo: max 60 chars, viral, emoji, en espanol
+- descripcion: 3 lineas + hashtags #lofi #shorts #estudiar
+- tags: lista de 10 tags cortos
 """
-    response = client.chat.completions.create(
+    r = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
         max_tokens=500
     )
-    return json.loads(response.choices[0].message.content, strict=False)
+    return json.loads(r.choices[0].message.content, strict=False)
 
-def create_thumbnail_largo(tipo, titulo, duration_h, output_path):
-    img = Image.new("RGB", (1280, 720), color=(8, 6, 20))
-    draw = ImageDraw.Draw(img)
-    colors = {
-        "lofi_estudio":    [(50, 20, 150), (20, 120, 180)],
-        "lluvia_lofi":     [(10, 40, 120), (40, 140, 200)],
-        "jazz_lofi":       [(120, 50, 20), (180, 120, 20)],
-        "naturaleza":      [(20, 80, 40), (40, 160, 80)],
-        "lofi_dormir":     [(40, 10, 80), (80, 30, 120)],
-        "piano_relajante": [(100, 30, 120), (160, 60, 180)]
-    }
-    c1, c2 = colors.get(tipo, [(50, 20, 150), (20, 120, 180)])
-    for i in range(200):
-        x = random.randint(0, 1280)
-        y = random.randint(0, 720)
-        r = random.randint(1, 3)
-        draw.ellipse([x-r, y-r, x+r, y+r], fill=(255, 255, 255, random.randint(30, 100)))
-    draw.ellipse([(-150, -150), (550, 550)], fill=c1)
-    draw.ellipse([(750, 250), (1450, 950)], fill=c2)
-    try:
-        font_big = ImageFont.truetype("arial.ttf", 72)
-        font_med = ImageFont.truetype("arial.ttf", 48)
-        font_small = ImageFont.truetype("arial.ttf", 36)
-    except:
-        font_big = ImageFont.load_default()
-        font_med = font_big
-        font_small = font_big
-    badge_text = f"{duration_h}H"
-    draw.ellipse([(30, 30), (160, 160)], fill=(255, 200, 0))
-    draw.text((95, 95), badge_text, font=font_med, fill=(20, 10, 50), anchor="mm",
-              stroke_width=1, stroke_fill=(150, 100, 0))
-    lines = textwrap.wrap(titulo.replace("Ã°Å¸â€œÅ¡","").replace("Ã°Å¸Å½Âµ","").replace("Ã°Å¸Å’â„¢","").replace("Ã°Å¸ËœÂ´","").replace("Ã°Å¸Å’Â¿","").replace("Ã¢Ëœâ€¢","").strip(), width=20)
-    y = 220
-    for line in lines[:3]:
-        draw.text((640, y), line, font=font_big, fill=(255, 255, 255), anchor="mm",
-                  stroke_width=3, stroke_fill=(0, 0, 0))
-        y += 88
-    etiquetas = {
-        "lofi_estudio":    "Ã°Å¸â€œÅ¡ lofi para estudiar",
-        "lluvia_lofi":     "Ã°Å¸Å’Â§Ã¯Â¸Â lluvia + lofi",
-        "jazz_lofi":       "Ã°Å¸Å½Â· jazz lofi",
-        "naturaleza":      "Ã°Å¸Å’Â¿ naturaleza relajante",
-        "lofi_dormir":     "Ã°Å¸Å’â„¢ lofi para dormir",
-        "piano_relajante": "Ã°Å¸Å½Â¹ piano relajante"
-    }
-    draw.rectangle([(0, 620), (1280, 720)], fill=(0, 0, 0, 180))
-    draw.text((640, 655), etiquetas.get(tipo, "lofi beats"), font=font_med,
-              fill=(200, 200, 255), anchor="mm")
-    draw.text((1200, 700), "FogWindowBeats", font=font_small,
-              fill=(150, 150, 200), anchor="rm")
-    img.save(str(output_path), "JPEG", quality=95)
-
-def create_thumbnail_short(tipo, frase, output_path):
-    img = Image.new("RGB", (1080, 1920), color=(8, 6, 20))
-    draw = ImageDraw.Draw(img)
-    colors = {
-        "lofi_estudio":    [(50, 20, 150), (20, 120, 180)],
-        "lluvia_lofi":     [(10, 40, 120), (40, 140, 200)],
-        "jazz_lofi":       [(120, 50, 20), (180, 120, 20)],
-        "naturaleza":      [(20, 80, 40), (40, 160, 80)],
-        "lofi_dormir":     [(40, 10, 80), (80, 30, 120)],
-        "piano_relajante": [(100, 30, 120), (160, 60, 180)]
-    }
-    c1, c2 = colors.get(tipo, [(50, 20, 150), (20, 120, 180)])
-    draw.ellipse([(-200, -200), (800, 800)], fill=c1)
-    draw.ellipse([(400, 1200), (1400, 2200)], fill=c2)
-    try:
-        font_big = ImageFont.truetype("arial.ttf", 90)
-        font_small = ImageFont.truetype("arial.ttf", 50)
-    except:
-        font_big = ImageFont.load_default()
-        font_small = font_big
-    lines = textwrap.wrap(frase, width=16)
-    y = 800
-    for line in lines:
-        draw.text((540, y), line, font=font_big, fill=(255, 255, 255), anchor="mm",
-                  stroke_width=4, stroke_fill=(0, 0, 0))
-        y += 110
-    draw.text((540, 1820), "FogWindowBeats", font=font_small,
-              fill=(150, 150, 200), anchor="mm")
-    img.save(str(output_path), "JPEG", quality=95)
-
-def upload_youtube(service, video_path, thumbnail_path, metadata, is_short=False):
+def upload_youtube(service, video_path, thumbnail_path, metadata):
     body = {
         "snippet": {
             "title": metadata["titulo"],
@@ -319,28 +334,28 @@ def upload_youtube(service, video_path, thumbnail_path, metadata, is_short=False
             videoId=video_id,
             media_body=MediaFileUpload(str(thumbnail_path), mimetype="image/jpeg")
         ).execute()
-    except Exception as te:
-        print(f"Thumbnail omitido: {te}")
+    except Exception as e:
+        print(f"Thumbnail omitido: {e}")
     return video_id
 
 def pipeline_largo(tipo, service, tmp):
-    duration = 60 if TEST_MODE else random.choice(DURACIONES_LARGO)
-    duration_h = round(duration / 3600, 1) if not TEST_MODE else 0.016
-    print(f"LARGO | tipo={tipo} | duracion={duration}s")
+    duration = random.choice(DURACIONES_LARGO)
+    duration_h = round(duration / 3600, 1)
+    print(f"LARGO | tipo={tipo} | {duration_h}h")
     audio_out = tmp / "audio.aac"
     video_raw = tmp / "video_raw.mp4"
     video_final = tmp / "video_final.mp4"
     thumbnail = tmp / "thumbnail.jpg"
-    send_telegram(f"Ã°Å¸Å½Âµ LARGO iniciando\nTipo: {tipo} | {duration_h}h")
+    send_telegram(f"🎵 LARGO iniciando\nTipo: {tipo} | {duration_h}h")
     build_audio(tipo, duration, audio_out)
-    send_telegram("Ã°Å¸Å½Â¬ Construyendo video horizontal...")
-    build_video_horizontal(duration, video_raw)
-    send_telegram("Ã°Å¸â€â€” Mezclando AV...")
+    send_telegram("🎬 Construyendo video...")
+    build_video_horizontal(tipo, duration, video_raw)
+    send_telegram("🔗 Mezclando AV...")
     merge_av(video_raw, audio_out, video_final)
-    send_telegram("Ã°Å¸â€“Â¼ Metadata + thumbnail...")
+    send_telegram("🖼 Metadata + thumbnail...")
     metadata = generate_metadata_largo(tipo, duration_h)
-    create_thumbnail_largo(tipo, metadata["titulo"], duration_h, thumbnail)
-    send_telegram("Ã°Å¸â€œÂ¤ Subiendo a YouTube...")
+    create_thumbnail_largo(tipo, metadata["titulo"], duration_h, video_raw, thumbnail)
+    send_telegram("📤 Subiendo a YouTube...")
     video_id = upload_youtube(service, video_final, thumbnail, metadata)
     for f in [audio_out, video_raw, video_final, thumbnail]:
         try: f.unlink()
@@ -348,52 +363,52 @@ def pipeline_largo(tipo, service, tmp):
     return video_id, metadata["titulo"]
 
 def pipeline_short(tipo, service, tmp):
-    duration = 30 if TEST_MODE else random.choice(DURACIONES_SHORT)
+    duration = random.choice(DURACIONES_SHORT)
     frase = random.choice(FRASES_SHORT)
-    print(f"SHORT | tipo={tipo} | duracion={duration}s | frase={frase}")
+    print(f"SHORT | tipo={tipo} | {duration}s | frase={frase}")
     audio_out = tmp / "audio_s.aac"
     video_raw = tmp / "video_raw_s.mp4"
     video_final = tmp / "video_final_s.mp4"
     thumbnail = tmp / "thumbnail_s.jpg"
-    send_telegram(f"Ã°Å¸â€œÂ± SHORT iniciando\nFrase: {frase}")
+    send_telegram(f"📱 SHORT iniciando\nFrase: {frase}")
     build_audio(tipo, duration, audio_out)
-    send_telegram("Ã°Å¸Å½Â¬ Construyendo video vertical...")
-    build_video_vertical(duration, frase, video_raw)
-    send_telegram("Ã°Å¸â€â€” Mezclando AV...")
+    send_telegram("🎬 Video vertical...")
+    build_video_vertical(tipo, duration, video_raw)
+    send_telegram("🔗 Mezclando AV...")
     merge_av(video_raw, audio_out, video_final)
-    send_telegram("Ã°Å¸â€“Â¼ Metadata + thumbnail...")
+    send_telegram("🖼 Metadata + thumbnail...")
     metadata = generate_metadata_short(tipo, frase)
-    create_thumbnail_short(tipo, frase, thumbnail)
-    send_telegram("Ã°Å¸â€œÂ¤ Subiendo Short...")
-    video_id = upload_youtube(service, video_final, thumbnail, metadata, is_short=True)
+    create_thumbnail_short(tipo, frase, video_raw, thumbnail)
+    send_telegram("📤 Subiendo Short...")
+    video_id = upload_youtube(service, video_final, thumbnail, metadata)
     for f in [audio_out, video_raw, video_final, thumbnail]:
         try: f.unlink()
         except: pass
     return video_id, metadata["titulo"]
 
 def main():
-    tipo = random.choice(TIPOS)
-    modo = random.choices(["largo", "short"], weights=[60, 40])[0]
-    if TEST_MODE:
-        modo = os.environ.get("MODO", "largo")
-    send_telegram(f"Ã°Å¸Å¡â‚¬ FogWindowBeats arrancando\nModo: {modo.upper()} | Tipo: {tipo}")
+    tipo_largo = random.choice(TIPOS)
+    tipo_short = random.choice(TIPOS)
+    send_telegram(f"🚀 FogWindowBeats arrancando\nLARGO: {tipo_largo}\nSHORT: {tipo_short}")
     tmp = BASE / "tmp"
     tmp.mkdir(exist_ok=True)
     service = get_youtube_service()
     try:
-        if modo == "largo":
-            video_id, titulo = pipeline_largo(tipo, service, tmp)
-        else:
-            video_id, titulo = pipeline_short(tipo, service, tmp)
-        url = f"https://youtu.be/{video_id}"
-        if modo == "short":
-            url = f"https://youtube.com/shorts/{video_id}"
-        send_telegram(f"Ã¢Å“â€¦ Publicado [{modo.upper()}]\n{titulo}\n{url}")
-        print(f"Ã¢Å“â€¦ {url}")
+        vid_l, titulo_l = pipeline_largo(tipo_largo, service, tmp)
+        url_l = f"https://youtu.be/{vid_l}"
+        send_telegram(f"✅ LARGO publicado\n{titulo_l}\n{url_l}")
+        print(f"✅ LARGO: {url_l}")
     except Exception as e:
-        send_telegram(f"Ã¢ÂÅ’ Error FogWindowBeats: {e}")
-        print(f"ERROR: {e}")
-        raise
+        send_telegram(f"❌ Error LARGO: {e}")
+        print(f"ERROR LARGO: {e}")
+    try:
+        vid_s, titulo_s = pipeline_short(tipo_short, service, tmp)
+        url_s = f"https://youtube.com/shorts/{vid_s}"
+        send_telegram(f"✅ SHORT publicado\n{titulo_s}\n{url_s}")
+        print(f"✅ SHORT: {url_s}")
+    except Exception as e:
+        send_telegram(f"❌ Error SHORT: {e}")
+        print(f"ERROR SHORT: {e}")
 
 if __name__ == "__main__":
     main()
