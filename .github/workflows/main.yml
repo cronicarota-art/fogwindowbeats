@@ -30,11 +30,14 @@ jobs:
 
       - name: Preparar assets
         run: |
-          cp -r assets/audio_small/* assets/audio_lofi/ 2>/dev/null || true
-          cp -r assets/audio_small/* assets/audio_jazz/ 2>/dev/null || true
-          cp -r assets/audio_small/* assets/audio_piano/ 2>/dev/null || true
-          cp -r assets/videos_small/* assets/videos_lofi/ 2>/dev/null || true
-          cp -r assets/videos_small/* assets/videos_naturaleza/ 2>/dev/null || true
+          for dir in assets/audio_lofi assets/audio_lluvia assets/audio_naturaleza assets/audio_jazz assets/audio_piano; do
+            mkdir -p $dir
+            cp assets/audio_small/* $dir/ 2>/dev/null || true
+          done
+          for dir in assets/videos_lofi assets/videos_lluvia assets/videos_naturaleza; do
+            mkdir -p $dir
+            cp assets/videos_small/* $dir/ 2>/dev/null || true
+          done
 
       - name: Ejecutar pipeline
         env:
