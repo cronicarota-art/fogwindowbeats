@@ -34,33 +34,45 @@ jobs:
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
         run: |
           python - <<'PYEOF'
-          import requests, os, random, time
+          import requests, os, random, time, shutil
           from pathlib import Path
 
           API_KEY = os.environ["PEXELS_API_KEY"]
           HEADERS = {"Authorization": API_KEY}
 
-          QUERIES_H = [
-              "rain on window night",
-              "coffee shop rainy window",
-              "cozy room night lamp",
-              "city rain night street",
-              "study desk lamp night",
-              "lofi aesthetic room",
-              "foggy forest rain"
+          QUERIES_BY_FOLDER = {
+              "assets/videos_lofi": [
+                  "rain window night dark",
+                  "rain falling on glass window",
+                  "rain drops window close up",
+                  "dark rainy night window",
+                  "cozy room rain outside",
+              ],
+              "assets/videos_lluvia": [
+                  "heavy rain falling street",
+                  "rain storm window",
+                  "rain drops glass close",
+                  "rainy day window view",
+                  "rain puddle drops",
+              ],
+              "assets/videos_naturaleza": [
+                  "forest rain nature",
+                  "river flowing nature",
+                  "waterfall nature peaceful",
+                  "nature rain trees",
+                  "ocean waves calm",
+              ],
+          }
+
+          QUERIES_VERTICAL = [
+              "rain window vertical",
+              "rain falling vertical slow",
+              "nature rain vertical",
+              "forest rain vertical",
+              "rain drops vertical close",
           ]
 
-          QUERIES_V = [
-              "rain falling vertical",
-              "nature waterfall vertical",
-              "night city vertical",
-              "foggy forest vertical",
-              "cozy window rain vertical",
-              "candle flame close up",
-              "steam coffee cup close"
-          ]
-
-          def get_best_video_url(video_files, orientation):
+          def get_best_url(video_files, orientation):
               if orientation == "landscape":
                   preferred = [f for f in video_files
                                if f.get("width", 0) >= 1920
@@ -81,14 +93,12 @@ jobs:
                                    and f.get("file_type") == "video/mp4"]
               if not preferred:
                   preferred = [f for f in video_files if f.get("file_type") == "video/mp4"]
-              if not preferred:
-                  preferred = video_files
               preferred.sort(key=lambda x: x.get("width", 0) * x.get("height", 0), reverse=True)
               return preferred[0]["link"] if preferred else None
 
           def download_video(url, out_path):
               try:
-                  resp = requests.get(url, stream=True, timeout=60)
+                  resp = requests.get(url, stream=True, timeout=90)
                   resp.raise_for_status()
                   total = 0
                   with open(out_path, "wb") as f:
@@ -96,14 +106,14 @@ jobs:
                           f.write(chunk)
                           total += len(chunk)
                   size_mb = total / (1024*1024)
-                  if size_mb < 0.5:
+                  if size_mb < 1.0:
                       os.remove(out_path)
-                      print(f"  Descartado (muy pequeño: {size_mb:.1f}MB): {out_path}")
+                      print(f"  Descartado (muy pequeño {size_mb:.1f}MB)")
                       return False
                   print(f"  OK {size_mb:.1f}MB → {out_path}")
                   return True
               except Exception as e:
-                  print(f"  Error descargando {url}: {e}")
+                  print(f"  Error: {e}")
                   if os.path.exists(out_path):
                       os.remove(out_path)
                   return False
@@ -122,58 +132,52 @@ jobs:
                           headers=HEADERS,
                           params={
                               "query": query,
-                              "per_page": 8,
+                              "per_page": 10,
                               "orientation": orientation,
-                              "size": "large"
+                              "size": "large",
+                              "min_duration": 5,
+                              "max_duration": 60,
                           },
                           timeout=30
                       )
                       r.raise_for_status()
-                      data = r.json()
-                      videos = data.get("videos", [])
+                      videos = r.json().get("videos", [])
                       print(f"  Encontrados: {len(videos)}")
                       random.shuffle(videos)
                       for v in videos:
                           if downloaded >= target:
                               break
-                          duration = v.get("duration", 0)
-                          if duration < 5:
+                          if v.get("duration", 0) < 5:
                               continue
-                          url = get_best_video_url(v.get("video_files", []), orientation)
+                          url = get_best_url(v.get("video_files", []), orientation)
                           if not url:
                               continue
                           out = f"{folder}/pexels_{v['id']}.mp4"
                           if Path(out).exists():
-                              print(f"  Ya existe: {out}")
                               downloaded += 1
                               continue
                           if download_video(url, out):
                               downloaded += 1
-                      time.sleep(1)
+                      time.sleep(0.5)
                   except Exception as e:
-                      print(f"  Error en query '{query}': {e}")
+                      print(f"  Error query '{query}': {e}")
                       time.sleep(2)
               print(f"Total {orientation} en {folder}: {downloaded}")
               return downloaded
 
-          print("=== Descargando horizontales (16:9) ===")
-          h = fetch_videos(QUERIES_H, "assets/videos_lofi", "landscape", target=5)
+          total_h = 0
+          for folder, queries in QUERIES_BY_FOLDER.items():
+              n = fetch_videos(queries, folder, "landscape", target=4)
+              total_h += n
 
-          print("=== Descargando verticales (9:16) ===")
-          v = fetch_videos(QUERIES_V, "assets/videos_vertical", "portrait", target=5)
+          total_v = fetch_videos(QUERIES_VERTICAL, "assets/videos_vertical", "portrait", target=5)
 
-          import shutil
-          for d in ["assets/videos_lluvia", "assets/videos_naturaleza"]:
-              Path(d).mkdir(parents=True, exist_ok=True)
-              for f in Path("assets/videos_lofi").glob("*.mp4"):
-                  shutil.copy(f, d)
-
-          if h == 0:
+          if total_h == 0:
               raise Exception("No se descargaron videos horizontales")
-          if v == 0:
+          if total_v == 0:
               raise Exception("No se descargaron videos verticales")
 
-          print("=== Descarga completada ===")
+          print(f"=== Total: {total_h} horizontales, {total_v} verticales ===")
           PYEOF
 
       - name: Preparar assets audio
