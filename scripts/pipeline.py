@@ -287,11 +287,30 @@ def generate_metadata_largo(tipo, duration_h):
         h = i // 60
         m = i % 60
         timestamps += f"{h:02d}:{m:02d}:00 - Lofi Mix\n"
-    prompt = f"""Genera metadata para YouTube de musica lofi tipo "{tipo}", duracion {duration_h} horas.
+    prompt = f"""Eres un experto en SEO y marketing de YouTube especializado en musica lofi y ambience.
+Genera metadata VIRAL para un video de YouTube tipo "{tipo}", duracion {duration_h} horas.
+
+REGLAS PARA EL TITULO:
+- Maximo 80 caracteres
+- Debe ser IRRESISTIBLE, emocional, que la gente quiera hacer clic
+- Incluye la duracion exacta: {duration_h} horas
+- Usa emojis relevantes al tema (lluvia=, piano=, naturaleza=, dormir=, estudio=)
+- Ejemplos de estilo BUENO: "3 Horas de Lluvia + Lofi para Estudiar Sin Parar", "Lluvia en la Ventana  - 4 Horas de Lofi Perfecto para Concentrarse", "No Podras Dejar de Estudiar con Este Lofi  - 2 Horas"
+- Ejemplos de estilo MALO (evitar): "Musica Lofi para Estudiar 3.0 horas", "Lofi Mix 2 horas"
+
+TIPO DE CONTENIDO: {tipo}
+EMOCIONES A TRANSMITIR segun tipo:
+- lofi_estudio: concentracion, productividad, cafe, madrugada, focus
+- lluvia_lofi: lluvia en ventana, cozy, tormenta perfecta, noche lluviosa
+- jazz_lofi: elegancia, cafe parisino, noche de jazz, smooth
+- naturaleza: paz, bosque, aire fresco, desconectar
+- lofi_dormir: relajacion profunda, dormir bien, mente en calma
+- piano_relajante: belleza, emocion, piano suave, alma
+
 JSON con:
-- titulo: max 80 chars, emoji relevante, en espanol, SEO, incluye "{duration_h} horas"
-- descripcion: 400 palabras, timestamps:\n{timestamps}\nhashtags al final
-- tags: lista de 20 strings lofi SEO en espanol e ingles
+- titulo: string viral segun reglas
+- descripcion: 500 palabras, emocionante, incluye beneficios (concentracion, relajacion, etc), timestamps:\n{timestamps}\nhashtags relevantes al final (minimo 15)
+- tags: lista de 25 tags SEO agresivos en espanol e ingles
 """
     r = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
@@ -303,11 +322,18 @@ JSON con:
 
 def generate_metadata_short(tipo, frase):
     client = Groq(api_key=GROQ_API_KEY)
-    prompt = f"""Genera metadata para YouTube Short de lofi tipo "{tipo}", frase "{frase}".
+    prompt = f"""Eres experto en YouTube Shorts virales de musica lofi.
+Genera metadata para un Short tipo "{tipo}", frase central: "{frase}"
+
+REGLAS TITULO:
+- Maximo 60 chars, debe generar curiosidad o identificacion inmediata
+- Ejemplos BUENOS: "POV: son las 3am y tienes que entregar", "cuando el lofi te salva la vida", "la lluvia perfecta para concentrarse"
+- Usa minusculas estilo casual, emojis al final
+
 JSON con:
-- titulo: max 60 chars, viral, emoji, en espanol
-- descripcion: 3 lineas + hashtags #lofi #shorts #estudiar
-- tags: lista de 10 tags cortos
+- titulo: string viral casual en espanol
+- descripcion: 2 lineas emotivas + hashtags #lofi #shorts #estudiar #concentracion #fyp #parati
+- tags: lista de 15 tags cortos lofi shorts viral
 """
     r = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
@@ -355,16 +381,16 @@ def pipeline_largo(tipo, service, tmp):
     video_raw = tmp / "video_raw.mp4"
     video_final = tmp / "video_final.mp4"
     thumbnail = tmp / "thumbnail.jpg"
-    send_telegram(f"ÃƒÂ°Ã…Â¸Ã…Â½Ã‚Âµ LARGO iniciando\nTipo: {tipo} | {duration_h}h")
+    send_telegram(f"ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â°ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â½ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âµ LARGO iniciando\nTipo: {tipo} | {duration_h}h")
     build_audio(tipo, duration, audio_out)
-    send_telegram("ÃƒÂ°Ã…Â¸Ã…Â½Ã‚Â¬ Construyendo video...")
+    send_telegram("ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â°ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â½ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ Construyendo video...")
     build_video_horizontal(tipo, duration, video_raw)
-    send_telegram("ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬â€ Mezclando AV...")
+    send_telegram("ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â°ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Mezclando AV...")
     merge_av(video_raw, audio_out, video_final)
-    send_telegram("ÃƒÂ°Ã…Â¸Ã¢â‚¬â€œÃ‚Â¼ Metadata + thumbnail...")
+    send_telegram("ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â°ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¼ Metadata + thumbnail...")
     metadata = generate_metadata_largo(tipo, duration_h)
     create_thumbnail_largo(tipo, metadata["titulo"], duration_h, video_raw, thumbnail)
-    send_telegram("ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â¤ Subiendo a YouTube...")
+    send_telegram("ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â°ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¤ Subiendo a YouTube...")
     video_id = upload_youtube(service, video_final, thumbnail, metadata)
     for f in [audio_out, video_raw, video_final, thumbnail]:
         try: f.unlink()
@@ -379,16 +405,16 @@ def pipeline_short(tipo, service, tmp):
     video_raw = tmp / "video_raw_s.mp4"
     video_final = tmp / "video_final_s.mp4"
     thumbnail = tmp / "thumbnail_s.jpg"
-    send_telegram(f"ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â± SHORT iniciando\nFrase: {frase}")
+    send_telegram(f"ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â°ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â± SHORT iniciando\nFrase: {frase}")
     build_audio(tipo, duration, audio_out)
-    send_telegram("ÃƒÂ°Ã…Â¸Ã…Â½Ã‚Â¬ Video vertical...")
+    send_telegram("ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â°ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â½ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ Video vertical...")
     build_video_vertical(tipo, duration, video_raw)
-    send_telegram("ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬â€ Mezclando AV...")
+    send_telegram("ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â°ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Mezclando AV...")
     merge_av(video_raw, audio_out, video_final)
-    send_telegram("ÃƒÂ°Ã…Â¸Ã¢â‚¬â€œÃ‚Â¼ Metadata + thumbnail...")
+    send_telegram("ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â°ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¼ Metadata + thumbnail...")
     metadata = generate_metadata_short(tipo, frase)
     create_thumbnail_short(tipo, frase, video_raw, thumbnail)
-    send_telegram("ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â¤ Subiendo Short...")
+    send_telegram("ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â°ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¤ Subiendo Short...")
     video_id = upload_youtube(service, video_final, thumbnail, metadata)
     for f in [audio_out, video_raw, video_final, thumbnail]:
         try: f.unlink()
