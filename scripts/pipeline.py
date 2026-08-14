@@ -1,4 +1,4 @@
-import os, sys, random, pickle, datetime, subprocess, requests, json, glob, textwrap
+﻿import os, sys, random, pickle, datetime, subprocess, requests, json, glob, textwrap
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 from groq import Groq
@@ -11,6 +11,9 @@ ASSETS = BASE / "assets"
 GROQ_API_KEY = os.environ["GROQ_API_KEY"]
 TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
+
+TEST_MODE = os.environ.get("TEST_MODE", "0") == "1"
+TARGET_DURATION = 60 if TEST_MODE else random.randint(3600, 5400)
 
 TIPOS = [
     "lofi_estudio",
@@ -38,8 +41,6 @@ VIDEO_MAP = {
     "lofi_dormir":    "videos_lofi",
     "piano_relajante":"videos_naturaleza"
 }
-
-TARGET_DURATION = random.randint(3600, 5400)
 
 def send_telegram(msg):
     try:
@@ -78,14 +79,20 @@ def get_video_files(tipo):
     files += glob.glob(str(ASSETS / folder / "*.mov"))
     return files
 
+def run_ffmpeg(args):
+    print(f"FFmpeg: {' '.join(args)}")
+    result = subprocess.run(args, capture_output=False)
+    if result.returncode != 0:
+        raise Exception(f"FFmpeg fallo con codigo {result.returncode}")
+
 def build_audio(tipo, output_path):
     audio_files = get_audio_files(tipo)
     if not audio_files:
         raise Exception(f"No hay archivos de audio en {AUDIO_MAP[tipo]}")
     random.shuffle(audio_files)
     concat_list = BASE / "audio_concat.txt"
-    total = 0
     selected = []
+    total = 0
     while total < TARGET_DURATION:
         for f in audio_files:
             selected.append(f)
@@ -95,13 +102,13 @@ def build_audio(tipo, output_path):
     with open(concat_list, "w", encoding="utf-8") as f:
         for af in selected:
             f.write(f"file '{af}'\n")
-    subprocess.run([
+    run_ffmpeg([
         "ffmpeg", "-y", "-f", "concat", "-safe", "0",
         "-i", str(concat_list),
         "-t", str(TARGET_DURATION),
         "-acodec", "aac", "-b:a", "128k",
         str(output_path)
-    ], check=True, capture_output=True)
+    ])
     concat_list.unlink(missing_ok=True)
 
 def build_video_loop(tipo, duration, output_path):
@@ -121,32 +128,32 @@ def build_video_loop(tipo, duration, output_path):
     with open(concat_list, "w", encoding="utf-8") as f:
         for vf in selected:
             f.write(f"file '{vf}'\n")
-    subprocess.run([
+    run_ffmpeg([
         "ffmpeg", "-y", "-f", "concat", "-safe", "0",
         "-i", str(concat_list),
         "-t", str(duration),
         "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1",
-        "-r", "24", "-c:v", "libx264", "-preset", "fast", "-crf", "28",
+        "-r", "24", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "30",
         "-an", str(output_path)
-    ], check=True, capture_output=True)
+    ])
     concat_list.unlink(missing_ok=True)
 
 def merge_av(video_path, audio_path, output_path):
-    subprocess.run([
+    run_ffmpeg([
         "ffmpeg", "-y",
         "-i", str(video_path),
         "-i", str(audio_path),
         "-c:v", "copy", "-c:a", "copy",
         "-shortest", str(output_path)
-    ], check=True, capture_output=True)
+    ])
 
 def generate_metadata(tipo):
     client = Groq(api_key=GROQ_API_KEY)
     prompt = f"""Genera metadata para un video de YouTube de musica lofi tipo "{tipo}".
 Responde SOLO con JSON con estas claves:
-- titulo: string llamativo con emoji, max 80 chars, en español, optimizado SEO
+- titulo: string llamativo con emoji, max 80 chars, en espaÃ±ol, optimizado SEO
 - descripcion: string de 300 palabras con timestamps cada 15 min, hashtags lofi al final
-- tags: lista de 15 strings en español e ingles sobre lofi, concentracion, musica para estudiar
+- tags: lista de 15 strings en espaÃ±ol e ingles sobre lofi, concentracion, musica para estudiar
 Tipo de contenido: {tipo}
 """
     response = client.chat.completions.create(
@@ -161,8 +168,7 @@ def create_thumbnail(tipo, titulo, output_path):
     img = Image.new("RGB", (1280, 720), color=(10, 8, 25))
     draw = ImageDraw.Draw(img)
     for i in range(0, 1280, 40):
-        alpha = random.randint(10, 40)
-        draw.line([(i, 0), (i+20, 720)], fill=(100, 60, 200, alpha), width=1)
+        draw.line([(i, 0), (i+20, 720)], fill=(100, 60, 200), width=1)
     colors = {
         "lofi_estudio":   [(80, 40, 180), (40, 180, 220)],
         "lluvia_lofi":    [(30, 80, 180), (80, 200, 255)],
@@ -172,8 +178,8 @@ def create_thumbnail(tipo, titulo, output_path):
         "piano_relajante":[(140, 60, 160), (200, 100, 220)]
     }
     c1, c2 = colors.get(tipo, [(80, 40, 180), (40, 180, 220)])
-    draw.ellipse([(-100, -100), (500, 500)], fill=c1+(30,) if len(c1)==3 else c1)
-    draw.ellipse([(800, 300), (1400, 900)], fill=c2+(25,) if len(c2)==3 else c2)
+    draw.ellipse([(-100, -100), (500, 500)], fill=c1)
+    draw.ellipse([(800, 300), (1400, 900)], fill=c2)
     try:
         font_big = ImageFont.truetype("arial.ttf", 80)
         font_small = ImageFont.truetype("arial.ttf", 45)
@@ -201,16 +207,12 @@ def create_thumbnail(tipo, titulo, output_path):
     img.save(str(output_path), "JPEG", quality=95)
 
 def upload_youtube(service, video_path, thumbnail_path, metadata, tipo):
-    categorias = {
-        "lofi_estudio": "10", "lluvia_lofi": "10", "jazz_lofi": "10",
-        "naturaleza": "10", "lofi_dormir": "10", "piano_relajante": "10"
-    }
     body = {
         "snippet": {
             "title": metadata["titulo"],
             "description": metadata["descripcion"],
             "tags": metadata["tags"],
-            "categoryId": categorias.get(tipo, "10"),
+            "categoryId": "10",
             "defaultLanguage": "es"
         },
         "status": {
@@ -225,15 +227,19 @@ def upload_youtube(service, video_path, thumbnail_path, metadata, tipo):
     while response is None:
         _, response = request.next_chunk()
     video_id = response["id"]
-    service.thumbnails().set(
-        videoId=video_id,
-        media_body=MediaFileUpload(str(thumbnail_path), mimetype="image/jpeg")
-    ).execute()
+    try:
+        service.thumbnails().set(
+            videoId=video_id,
+            media_body=MediaFileUpload(str(thumbnail_path), mimetype="""image/jpeg""")
+        ).execute()
+    except Exception as te:
+        print(f"Thumbnail omitido: {te}")
     return video_id
 
 def main():
     tipo = random.choice(TIPOS)
-    send_telegram(f"🎵 FogWindowBeats iniciando\nTipo: {tipo}")
+    send_telegram(f"ðŸŽµ FogWindowBeats iniciando\nTipo: {tipo}\nDuracion: {TARGET_DURATION}s")
+    print(f"Tipo: {tipo} | Duracion: {TARGET_DURATION}s")
     tmp = BASE / "tmp"
     tmp.mkdir(exist_ok=True)
     audio_out = tmp / "audio.aac"
@@ -241,25 +247,32 @@ def main():
     video_final = tmp / "video_final.mp4"
     thumbnail = tmp / "thumbnail.jpg"
     try:
-        send_telegram("🔊 Construyendo audio...")
+        print("Construyendo audio...")
+        send_telegram("ðŸ”Š Construyendo audio...")
         build_audio(tipo, audio_out)
-        send_telegram("🎬 Construyendo video loop...")
+        print("Construyendo video loop...")
+        send_telegram("ðŸŽ¬ Construyendo video loop...")
         build_video_loop(tipo, TARGET_DURATION, video_raw)
-        send_telegram("🔗 Mezclando audio y video...")
+        print("Mezclando audio y video...")
+        send_telegram("ðŸ”— Mezclando audio y video...")
         merge_av(video_raw, audio_out, video_final)
-        send_telegram("🖼 Generando metadata y thumbnail...")
+        print("Generando metadata y thumbnail...")
+        send_telegram("ðŸ–¼ Generando metadata y thumbnail...")
         metadata = generate_metadata(tipo)
         create_thumbnail(tipo, metadata["titulo"], thumbnail)
-        send_telegram("📤 Subiendo a YouTube...")
+        print("Subiendo a YouTube...")
+        send_telegram("ðŸ“¤ Subiendo a YouTube...")
         service = get_youtube_service()
         video_id = upload_youtube(service, video_final, thumbnail, metadata, tipo)
-        msg = f"""✅ FogWindowBeats publicado
+        msg = f"""âœ… FogWindowBeats publicado
 Tipo: {tipo}
 Titulo: {metadata['titulo']}
 URL: https://youtu.be/{video_id}"""
         send_telegram(msg)
+        print(msg)
     except Exception as e:
-        send_telegram(f"❌ FogWindowBeats error: {e}")
+        send_telegram(f"âŒ FogWindowBeats error: {e}")
+        print(f"ERROR: {e}")
         raise
     finally:
         for f in [audio_out, video_raw, video_final, thumbnail]:

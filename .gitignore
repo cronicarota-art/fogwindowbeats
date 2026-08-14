@@ -10,5 +10,6 @@ assets/audio_piano/*
 assets/videos_lofi/*
 assets/videos_lluvia/*
 assets/videos_naturaleza/*
+assets/videos_vertical/*
 __pycache__/
 *.pyc
