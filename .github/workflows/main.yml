@@ -28,18 +28,69 @@ jobs:
       - name: Restaurar token
         run: echo "${{ secrets.YOUTUBE_TOKEN }}" | base64 -d > token.pickle
 
-      - name: Preparar assets
+      - name: Descargar videos Pexels
+        env:
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+        run: |
+          python - <<'EOF'
+          import requests, os, random
+          from pathlib import Path
+
+          api_key = os.environ["PEXELS_API_KEY"]
+          headers = {"Authorization": api_key}
+
+          queries_h = ["rain window night", "coffee shop rainy", "lofi aesthetic desk", "night city rain", "cozy room lamp"]
+          queries_v = ["rain vertical", "nature vertical", "night vertical lofi", "cozy aesthetic vertical", "foggy forest vertical"]
+
+          def download_videos(queries, folder, orientation="landscape", count=3):
+              Path(folder).mkdir(parents=True, exist_ok=True)
+              downloaded = 0
+              for query in queries:
+                  if downloaded >= count:
+                      break
+                  try:
+                      r = requests.get(
+                          "https://api.pexels.com/videos/search",
+                          headers=headers,
+                          params={"query": query, "per_page": 5, "orientation": orientation}
+                      )
+                      videos = r.json().get("videos", [])
+                      random.shuffle(videos)
+                      for v in videos:
+                          if downloaded >= count:
+                              break
+                          files = [f for f in v["video_files"] if f["quality"] == "hd"]
+                          if not files:
+                              files = v["video_files"]
+                          if files:
+                              url = files[0]["link"]
+                              out = f"{folder}/pexels_{v['id']}.mp4"
+                              resp = requests.get(url, stream=True)
+                              with open(out, "wb") as f:
+                                  for chunk in resp.iter_content(chunk_size=1024*1024):
+                                      f.write(chunk)
+                              print(f"Downloaded: {out}")
+                              downloaded += 1
+                  except Exception as e:
+                      print(f"Error: {e}")
+              print(f"Total downloaded to {folder}: {downloaded}")
+
+          download_videos(queries_h, "assets/videos_lofi", "landscape", 4)
+          download_videos(queries_v, "assets/videos_vertical", "portrait", 4)
+
+          for dir in ["assets/videos_lluvia", "assets/videos_naturaleza"]:
+              import shutil
+              Path(dir).mkdir(parents=True, exist_ok=True)
+              for f in Path("assets/videos_lofi").glob("*.mp4"):
+                  shutil.copy(f, dir)
+          EOF
+
+      - name: Preparar assets audio
         run: |
           for dir in assets/audio_lofi assets/audio_lluvia assets/audio_naturaleza assets/audio_jazz assets/audio_piano; do
             mkdir -p $dir
             cp assets/audio_small/* $dir/ 2>/dev/null || true
           done
-          for dir in assets/videos_lofi assets/videos_lluvia assets/videos_naturaleza; do
-            mkdir -p $dir
-            cp assets/videos_small/* $dir/ 2>/dev/null || true
-          done
-          mkdir -p assets/videos_vertical
-          cp assets/videos_vertical_small/* assets/videos_vertical/ 2>/dev/null || true
 
       - name: Ejecutar pipeline
         env:
