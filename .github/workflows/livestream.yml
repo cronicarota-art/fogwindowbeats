@@ -1,0 +1,163 @@
+name: FogWindowBeats LiveStream
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * *'
+
+jobs:
+  livestream:
+    runs-on: ubuntu-latest
+    timeout-minutes: 720
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Instalar FFmpeg
+        run: sudo apt-get install -y ffmpeg
+
+      - name: Descargar videos Pexels
+        env:
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+        run: |
+          python - <<'PYEOF'
+          import requests, os, random, time, subprocess
+          from pathlib import Path
+
+          API_KEY = os.environ["PEXELS_API_KEY"]
+          HEADERS = {"Authorization": API_KEY}
+
+          QUERIES = [
+              "rain drops window glass night",
+              "rain falling window close up",
+              "cozy room lamp night rain",
+              "rain street night city",
+              "forest rain nature calm",
+              "coffee shop rain window",
+          ]
+
+          def get_best_url(video_files):
+              preferred = [f for f in video_files
+                           if f.get("width",0) >= 1920 and f.get("height",0) <= 1080
+                           and f.get("file_type") == "video/mp4"]
+              if not preferred:
+                  preferred = [f for f in video_files
+                               if f.get("width",0) >= 1280
+                               and f.get("file_type") == "video/mp4"]
+              if not preferred:
+                  preferred = [f for f in video_files if f.get("file_type") == "video/mp4"]
+              preferred.sort(key=lambda x: x.get("width",0)*x.get("height",0), reverse=True)
+              return preferred[0]["link"] if preferred else None
+
+          def download_and_normalize(url, out_path):
+              tmp = out_path.with_suffix(".tmp.mp4")
+              try:
+                  resp = requests.get(url, stream=True, timeout=90)
+                  resp.raise_for_status()
+                  total = 0
+                  with open(tmp, "wb") as f:
+                      for chunk in resp.iter_content(chunk_size=1024*1024):
+                          f.write(chunk)
+                          total += len(chunk)
+                  if total < 1024*1024:
+                      tmp.unlink(missing_ok=True)
+                      return False
+                  vf = "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=24,format=yuv420p"
+                  r = subprocess.run([
+                      "ffmpeg", "-y", "-i", str(tmp),
+                      "-vf", vf, "-r", "24", "-vsync", "cfr",
+                      "-c:v", "libx264", "-preset", "fast", "-crf", "26",
+                      "-an", str(out_path)
+                  ], capture_output=True)
+                  tmp.unlink(missing_ok=True)
+                  if r.returncode != 0 or not out_path.exists():
+                      return False
+                  print(f"  OK -> {out_path.name}")
+                  return True
+              except Exception as e:
+                  print(f"  Error: {e}")
+                  for p in [tmp, out_path]:
+                      if p.exists(): p.unlink(missing_ok=True)
+                  return False
+
+          Path("assets/live_videos").mkdir(parents=True, exist_ok=True)
+          downloaded = 0
+          random.shuffle(QUERIES)
+          for query in QUERIES:
+              if downloaded >= 6:
+                  break
+              print(f"Buscando: '{query}'")
+              try:
+                  r = requests.get(
+                      "https://api.pexels.com/videos/search",
+                      headers=HEADERS,
+                      params={"query": query, "per_page": 5,
+                              "orientation": "landscape", "size": "large",
+                              "min_duration": 10},
+                      timeout=30
+                  )
+                  r.raise_for_status()
+                  videos = r.json().get("videos", [])
+                  random.shuffle(videos)
+                  for v in videos:
+                      if downloaded >= 6:
+                          break
+                      url = get_best_url(v.get("video_files", []))
+                      if not url:
+                          continue
+                      out = Path(f"assets/live_videos/pexels_{v['id']}.mp4")
+                      if out.exists():
+                          downloaded += 1
+                          continue
+                      if download_and_normalize(url, out):
+                          downloaded += 1
+                  time.sleep(0.5)
+              except Exception as e:
+                  print(f"  Error: {e}")
+          print(f"Total videos live: {downloaded}")
+          if downloaded == 0:
+              raise Exception("Sin videos para livestream")
+          PYEOF
+
+      - name: Preparar audio
+        run: |
+          mkdir -p assets/audio_lofi
+          cp assets/audio_small/* assets/audio_lofi/ 2>/dev/null || true
+
+      - name: Crear concat lists
+        run: |
+          python - <<'PYEOF'
+          import glob, random
+          from pathlib import Path
+
+          videos = glob.glob("assets/live_videos/*.mp4")
+          audios = glob.glob("assets/audio_lofi/*.mp3")
+          random.shuffle(videos)
+          random.shuffle(audios)
+
+          with open("live_video_concat.txt", "w") as f:
+              for _ in range(200):
+                  for v in videos:
+                      f.write(f"file '{v}'\n")
+
+          with open("live_audio_concat.txt", "w") as f:
+              for _ in range(500):
+                  for a in audios:
+                      f.write(f"file '{a}'\n")
+
+          print("Concat lists creadas")
+          PYEOF
+
+      - name: Iniciar livestream 11 horas
+        env:
+          YOUTUBE_STREAM_KEY: ${{ secrets.YOUTUBE_STREAM_KEY }}
+        run: |
+          ffmpeg \
+            -f concat -safe 0 -stream_loop -1 -i live_video_concat.txt \
+            -f concat -safe 0 -stream_loop -1 -i live_audio_concat.txt \
+            -vf "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=24,format=yuv420p,drawtext=text=FogWindowBeats:fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:fontsize=38:fontcolor=white@0.65:x=(w-text_w)/2:y=25:shadowcolor=black@0.6:shadowx=2:shadowy=2" \
+            -c:v libx264 -preset veryfast -b:v 3000k -maxrate 3000k -bufsize 6000k \
+            -r 24 -g 48 -keyint_min 48 \
+            -c:a aac -b:a 128k -ar 44100 \
+            -t 39600 \
+            -f flv "rtmp://a.rtmp.youtube.com/live2/${{ secrets.YOUTUBE_STREAM_KEY }}"
