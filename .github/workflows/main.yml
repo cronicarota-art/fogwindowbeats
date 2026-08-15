@@ -119,9 +119,9 @@ jobs:
                   size_mb = total / (1024*1024)
                   if size_mb < 1.0:
                       os.remove(out_path)
-                      print(f"  Descartado ({size_mb:.1f}MB muy pequeño)")
+                      print(f"  Descartado ({size_mb:.1f}MB muy pequeÃ±o)")
                       return False
-                  print(f"  ✓ {size_mb:.1f}MB → {out_path}")
+                  print(f"  âœ“ {size_mb:.1f}MB â†’ {out_path}")
                   return True
               except Exception as e:
                   print(f"  Error: {e}")

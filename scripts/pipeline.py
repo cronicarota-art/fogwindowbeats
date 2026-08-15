@@ -1,4 +1,4 @@
-import os, random, pickle, subprocess, requests, json, glob, textwrap
+import os, random, pickle, subprocess, requests, json, glob, textwrap, re
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 from groq import Groq
@@ -13,7 +13,6 @@ TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
 TIPOS = ["lofi_estudio", "lluvia_lofi", "jazz_lofi", "naturaleza", "lofi_dormir", "piano_relajante"]
-
 DURACIONES_LARGO = [7200, 10800, 14400, 21600, 28800]
 DURACIONES_SHORT = [15, 30, 45, 60]
 
@@ -57,6 +56,9 @@ ETIQUETAS = {
     "piano_relajante": "piano relajante"
 }
 
+WATERMARK_H = "drawtext=text=FogWindowBeats:fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:fontsize=38:fontcolor=white@0.65:x=(w-text_w)/2:y=25:shadowcolor=black@0.6:shadowx=2:shadowy=2"
+WATERMARK_V = "drawtext=text=FogWindowBeats:fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:fontsize=46:fontcolor=white@0.65:x=(w-text_w)/2:y=25:shadowcolor=black@0.6:shadowx=2:shadowy=2"
+
 def clean_text(text):
     return text.encode("ascii", "ignore").decode("ascii")
 
@@ -93,8 +95,7 @@ def get_video_files(tipo):
         if files:
             return files
     folder = VIDEO_MAP[tipo]
-    files = glob.glob(str(ASSETS / folder / "*.mp4"))
-    return files
+    return glob.glob(str(ASSETS / folder / "*.mp4"))
 
 def get_video_files_vertical():
     env_folder = os.environ.get("VIDEO_TIPO_V")
@@ -157,9 +158,9 @@ def build_video_horizontal(tipo, duration, output_path):
         "ffmpeg", "-y", "-f", "concat", "-safe", "0",
         "-i", str(concat_list),
         "-t", str(duration),
-        "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1",
+        "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=24,format=yuv420p",
         "-r", "24", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "30",
-        "-an", str(output_path)
+        "-vsync", "cfr", "-an", str(output_path)
     ])
     concat_list.unlink(missing_ok=True)
 
@@ -186,18 +187,21 @@ def build_video_vertical(tipo, duration, output_path):
         "ffmpeg", "-y", "-f", "concat", "-safe", "0",
         "-i", str(concat_list),
         "-t", str(duration),
-        "-vf", "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1",
+        "-vf", "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=30,format=yuv420p",
         "-r", "30", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
-        "-an", str(output_path)
+        "-vsync", "cfr", "-an", str(output_path)
     ])
     concat_list.unlink(missing_ok=True)
 
-def merge_av(video_path, audio_path, output_path):
+def merge_av(video_path, audio_path, output_path, vertical=False):
+    wm = WATERMARK_V if vertical else WATERMARK_H
     run_ffmpeg([
         "ffmpeg", "-y",
         "-i", str(video_path),
         "-i", str(audio_path),
-        "-c:v", "copy", "-c:a", "copy",
+        "-vf", wm,
+        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "30",
+        "-c:a", "copy",
         "-shortest", str(output_path)
     ])
 
@@ -215,15 +219,11 @@ def create_thumbnail_largo(tipo, titulo, duration_h, video_path, output_path):
     frame_path = output_path.parent / "frame_tmp.jpg"
     try:
         extract_frame(video_path, frame_path, 1280, 720)
-        img = Image.open(str(frame_path)).convert("RGB")
-        img = img.resize((1280, 720))
+        img = Image.open(str(frame_path)).convert("RGB").resize((1280, 720))
     except:
         img = Image.new("RGB", (1280, 720), color=(10, 8, 25))
-    draw = ImageDraw.Draw(img)
     overlay = Image.new("RGBA", (1280, 720), (0, 0, 0, 140))
-    img = img.convert("RGBA")
-    img = Image.alpha_composite(img, overlay)
-    img = img.convert("RGB")
+    img = Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB")
     draw = ImageDraw.Draw(img)
     try:
         font_big = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 72)
@@ -233,20 +233,20 @@ def create_thumbnail_largo(tipo, titulo, duration_h, video_path, output_path):
         font_big = ImageFont.load_default()
         font_med = font_big
         font_small = font_big
-    badge = f"{duration_h}H"
     draw.ellipse([(30, 25), (130, 125)], fill=(255, 200, 0))
-    draw.text((80, 75), badge, font=font_med, fill=(20, 10, 50), anchor="mm")
-    titulo_clean = titulo.encode("ascii", "ignore").decode()
+    draw.text((80, 75), f"{duration_h}H", font=font_med, fill=(20, 10, 50), anchor="mm")
+    titulo_clean = clean_text(titulo)
     lines = textwrap.wrap(titulo_clean, width=22)
     y = 220
     for line in lines[:3]:
         draw.text((640, y), line, font=font_big, fill=(255, 255, 255), anchor="mm",
                   stroke_width=3, stroke_fill=(0, 0, 0))
         y += 90
-    draw.rectangle([(0, 630), (1280, 720)], fill=(0, 0, 0, 200))
-    etiqueta = ETIQUETAS.get(tipo, "lofi beats")
-    draw.text((640, 675), etiqueta, font=font_med, fill=(200, 220, 255), anchor="mm")
-    draw.text((1240, 710), "FogWindowBeats", font=font_small, fill=(150, 150, 200), anchor="rm")
+    draw.rectangle([(0, 630), (1280, 720)], fill=(0, 0, 0))
+    draw.text((640, 675), ETIQUETAS.get(tipo, "lofi beats"), font=font_med,
+              fill=(200, 220, 255), anchor="mm")
+    draw.text((1240, 710), "FogWindowBeats", font=font_small,
+              fill=(150, 150, 200), anchor="rm")
     img.save(str(output_path), "JPEG", quality=95)
     if frame_path.exists():
         frame_path.unlink()
@@ -255,14 +255,11 @@ def create_thumbnail_short(tipo, frase, video_path, output_path):
     frame_path = output_path.parent / "frame_s_tmp.jpg"
     try:
         extract_frame(video_path, frame_path, 1080, 1920)
-        img = Image.open(str(frame_path)).convert("RGB")
-        img = img.resize((1080, 1920))
+        img = Image.open(str(frame_path)).convert("RGB").resize((1080, 1920))
     except:
         img = Image.new("RGB", (1080, 1920), color=(10, 8, 25))
     overlay = Image.new("RGBA", (1080, 1920), (0, 0, 0, 120))
-    img = img.convert("RGBA")
-    img = Image.alpha_composite(img, overlay)
-    img = img.convert("RGB")
+    img = Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB")
     draw = ImageDraw.Draw(img)
     try:
         font_big = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 80)
@@ -270,14 +267,15 @@ def create_thumbnail_short(tipo, frase, video_path, output_path):
     except:
         font_big = ImageFont.load_default()
         font_small = font_big
-    frase_clean = frase.encode("ascii", "ignore").decode()
+    frase_clean = clean_text(frase)
     lines = textwrap.wrap(frase_clean, width=18)
     y = 820
     for line in lines:
         draw.text((540, y), line, font=font_big, fill=(255, 255, 255), anchor="mm",
                   stroke_width=4, stroke_fill=(0, 0, 0))
         y += 100
-    draw.text((540, 1860), "FogWindowBeats", font=font_small, fill=(180, 180, 255), anchor="mm")
+    draw.text((540, 1860), "FogWindowBeats", font=font_small,
+              fill=(180, 180, 255), anchor="mm")
     img.save(str(output_path), "JPEG", quality=95)
     if frame_path.exists():
         frame_path.unlink()
@@ -290,30 +288,23 @@ def generate_metadata_largo(tipo, duration_h):
         h = i // 60
         m = i % 60
         timestamps += f"{h:02d}:{m:02d}:00 - Lofi Mix\n"
-    prompt = f"""Eres un experto en SEO y marketing de YouTube especializado en musica lofi y ambience.
-Genera metadata VIRAL para un video de YouTube tipo "{tipo}", duracion {duration_h} horas.
+    prompt = f"""Eres experto en SEO y marketing de YouTube especializado en musica lofi.
+Genera metadata VIRAL para video tipo "{tipo}", duracion {duration_h} horas.
 
-REGLAS PARA EL TITULO:
+REGLAS TITULO:
 - Maximo 80 caracteres
-- Debe ser IRRESISTIBLE, emocional, que la gente quiera hacer clic
-- Incluye la duracion exacta: {duration_h} horas
-- Usa emojis relevantes al tema (lluvia=, piano=, naturaleza=, dormir=, estudio=)
-- Ejemplos de estilo BUENO: "3 Horas de Lluvia + Lofi para Estudiar Sin Parar", "Lluvia en la Ventana  - 4 Horas de Lofi Perfecto para Concentrarse", "No Podras Dejar de Estudiar con Este Lofi  - 2 Horas"
-- Ejemplos de estilo MALO (evitar): "Musica Lofi para Estudiar 3.0 horas", "Lofi Mix 2 horas"
+- Irresistible, emocional, que genere clic
+- Incluye duracion: {duration_h} horas
+- Ejemplos BUENOS: "3 Horas de Lluvia + Lofi para Estudiar Sin Parar", "No Podras Dejar de Estudiar con Este Lofi - 2 Horas"
+- Ejemplos MALOS: "Musica Lofi para Estudiar 3.0 horas"
 
-TIPO DE CONTENIDO: {tipo}
-EMOCIONES A TRANSMITIR segun tipo:
-- lofi_estudio: concentracion, productividad, cafe, madrugada, focus
-- lluvia_lofi: lluvia en ventana, cozy, tormenta perfecta, noche lluviosa
-- jazz_lofi: elegancia, cafe parisino, noche de jazz, smooth
-- naturaleza: paz, bosque, aire fresco, desconectar
-- lofi_dormir: relajacion profunda, dormir bien, mente en calma
-- piano_relajante: belleza, emocion, piano suave, alma
+TIPO: {tipo}
+EMOCIONES: lofi_estudio=concentracion cafe madrugada, lluvia_lofi=lluvia cozy noche, jazz_lofi=elegancia cafe nocturno, naturaleza=paz bosque, lofi_dormir=relajacion calma, piano_relajante=belleza emocion
 
 JSON con:
-- titulo: string viral segun reglas
-- descripcion: 500 palabras, emocionante, incluye beneficios (concentracion, relajacion, etc), timestamps:\n{timestamps}\nhashtags relevantes al final (minimo 15)
-- tags: lista de 25 tags SEO agresivos en espanol e ingles
+- titulo: string viral
+- descripcion: 500 palabras emotiva con timestamps:\n{timestamps}\nminimo 15 hashtags al final
+- tags: lista de 25 strings SEO en espanol e ingles
 """
     r = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
@@ -325,18 +316,18 @@ JSON con:
 
 def generate_metadata_short(tipo, frase):
     client = Groq(api_key=GROQ_API_KEY)
-    prompt = f"""Eres experto en YouTube Shorts virales de musica lofi.
-Genera metadata para un Short tipo "{tipo}", frase central: "{frase}"
+    prompt = f"""Eres experto en YouTube Shorts virales de lofi.
+Genera metadata para Short tipo "{tipo}", frase: "{frase}"
 
 REGLAS TITULO:
-- Maximo 60 chars, debe generar curiosidad o identificacion inmediata
-- Ejemplos BUENOS: "POV: son las 3am y tienes que entregar", "cuando el lofi te salva la vida", "la lluvia perfecta para concentrarse"
-- Usa minusculas estilo casual, emojis al final
+- Maximo 60 chars, genera curiosidad o identificacion inmediata
+- Estilo casual minusculas con emojis
+- Ejemplos: "POV: son las 3am y tienes que entregar", "cuando el lofi te salva la vida"
 
 JSON con:
-- titulo: string viral casual en espanol
+- titulo: string viral casual
 - descripcion: 2 lineas emotivas + hashtags #lofi #shorts #estudiar #concentracion #fyp #parati
-- tags: lista de 15 tags cortos lofi shorts viral
+- tags: lista de 15 tags cortos
 """
     r = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
@@ -384,16 +375,16 @@ def pipeline_largo(tipo, service, tmp):
     video_raw = tmp / "video_raw.mp4"
     video_final = tmp / "video_final.mp4"
     thumbnail = tmp / "thumbnail.jpg"
-    send_telegram(f"ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â½ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âµ LARGO iniciando\nTipo: {tipo} | {duration_h}h")
+    send_telegram(f"LARGO iniciando | {tipo} | {duration_h}h")
     build_audio(tipo, duration, audio_out)
-    send_telegram("ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â½ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ Construyendo video...")
+    send_telegram("Construyendo video...")
     build_video_horizontal(tipo, duration, video_raw)
-    send_telegram("ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â Mezclando AV...")
-    merge_av(video_raw, audio_out, video_final)
-    send_telegram("ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¼ Metadata + thumbnail...")
+    send_telegram("Mezclando AV + watermark...")
+    merge_av(video_raw, audio_out, video_final, vertical=False)
+    send_telegram("Metadata + thumbnail...")
     metadata = generate_metadata_largo(tipo, duration_h)
     create_thumbnail_largo(tipo, metadata["titulo"], duration_h, video_raw, thumbnail)
-    send_telegram("ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¤ Subiendo a YouTube...")
+    send_telegram("Subiendo a YouTube...")
     video_id = upload_youtube(service, video_final, thumbnail, metadata)
     for f in [audio_out, video_raw, video_final, thumbnail]:
         try: f.unlink()
@@ -403,21 +394,21 @@ def pipeline_largo(tipo, service, tmp):
 def pipeline_short(tipo, service, tmp):
     duration = random.choice(DURACIONES_SHORT)
     frase = random.choice(FRASES_SHORT)
-    print(f"SHORT | tipo={tipo} | {duration}s | frase={frase}")
+    print(f"SHORT | tipo={tipo} | {duration}s")
     audio_out = tmp / "audio_s.aac"
     video_raw = tmp / "video_raw_s.mp4"
     video_final = tmp / "video_final_s.mp4"
     thumbnail = tmp / "thumbnail_s.jpg"
-    send_telegram(f"ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â± SHORT iniciando\nFrase: {frase}")
+    send_telegram(f"SHORT iniciando | {tipo} | {duration}s")
     build_audio(tipo, duration, audio_out)
-    send_telegram("ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â½ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ Video vertical...")
+    send_telegram("Video vertical...")
     build_video_vertical(tipo, duration, video_raw)
-    send_telegram("ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â Mezclando AV...")
-    merge_av(video_raw, audio_out, video_final)
-    send_telegram("ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¼ Metadata + thumbnail...")
+    send_telegram("Mezclando AV + watermark...")
+    merge_av(video_raw, audio_out, video_final, vertical=True)
+    send_telegram("Metadata + thumbnail...")
     metadata = generate_metadata_short(tipo, frase)
     create_thumbnail_short(tipo, frase, video_raw, thumbnail)
-    send_telegram("ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¤ Subiendo Short...")
+    send_telegram("Subiendo Short...")
     video_id = upload_youtube(service, video_final, thumbnail, metadata)
     for f in [audio_out, video_raw, video_final, thumbnail]:
         try: f.unlink()
@@ -428,14 +419,14 @@ def main():
     env_tipo = os.environ.get("VIDEO_TIPO")
     tipo_largo = env_tipo if env_tipo else random.choice(TIPOS)
     tipo_short = env_tipo if env_tipo else random.choice(TIPOS)
-    send_telegram(f"FogWindowBeats arrancando\nLARGO: {tipo_largo}\nSHORT: {tipo_short}")
+    send_telegram(f"FogWindowBeats arrancando | LARGO: {tipo_largo} | SHORT: {tipo_short}")
     tmp = BASE / "tmp"
     tmp.mkdir(exist_ok=True)
     service = get_youtube_service()
     try:
         vid_l, titulo_l = pipeline_largo(tipo_largo, service, tmp)
         url_l = f"https://youtu.be/{vid_l}"
-        send_telegram(f"LARGO publicado\n{titulo_l}\n{url_l}")
+        send_telegram(f"LARGO publicado\n{clean_text(titulo_l)}\n{url_l}")
         print(f"LARGO: {url_l}")
     except Exception as e:
         send_telegram(f"Error LARGO: {e}")
@@ -443,7 +434,7 @@ def main():
     try:
         vid_s, titulo_s = pipeline_short(tipo_short, service, tmp)
         url_s = f"https://youtube.com/shorts/{vid_s}"
-        send_telegram(f"SHORT publicado\n{titulo_s}\n{url_s}")
+        send_telegram(f"SHORT publicado\n{clean_text(titulo_s)}\n{url_s}")
         print(f"SHORT: {url_s}")
     except Exception as e:
         send_telegram(f"Error SHORT: {e}")
