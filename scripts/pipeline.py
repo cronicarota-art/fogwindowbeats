@@ -284,7 +284,7 @@ def generate_metadata_largo(tipo, duration_h):
     client = Groq(api_key=GROQ_API_KEY)
     timestamps = ""
     mins = int(duration_h * 60)
-    for i in range(0, mins, 15):
+    for i in range(0, min(mins, 480), 30):
         h = i // 60
         m = i % 60
         timestamps += f"{h:02d}:{m:02d}:00 - Lofi Mix\n"
@@ -310,7 +310,7 @@ JSON con:
         model="llama-3.3-70b-versatile",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
-        max_tokens=1200
+        max_tokens=2000
     )
     return json.loads(r.choices[0].message.content, strict=False)
 
