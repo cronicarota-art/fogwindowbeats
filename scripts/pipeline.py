@@ -1,4 +1,4 @@
-import os, random, pickle, subprocess, requests, json, glob, textwrap, re
+import os, random, pickle, subprocess, requests, json, glob, textwrap, re, time
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 from groq import Groq
@@ -44,7 +44,21 @@ FRASES_SHORT = [
     "para cuando todo lo demas falla",
     "silencia el ruido enciende el flow",
     "3am study session hits different",
-    "el soundtrack de tu mejor dia"
+    "el soundtrack de tu mejor dia",
+    "POV estas en modo productividad",
+    "cuando el cafe ya no es suficiente",
+    "esto es lo que necesitas ahora",
+    "modo biblioteca activado",
+    "tu cerebro en modo zen"
+]
+
+COMENTARIOS_SHORT = [
+    "Guardalo para tu proxima sesion de estudio!",
+    "Ponlo en bucle y a trabajar!",
+    "El soundtrack perfecto para hoy",
+    "Siguenos para mas lofi todos los dias!",
+    "Comparte con alguien que necesite concentrarse",
+    "Suscribete para mas vibes lofi"
 ]
 
 ETIQUETAS = {
@@ -143,19 +157,12 @@ def build_video_horizontal(tipo, duration, output_path):
         raise Exception(f"No hay videos para {tipo}")
     random.shuffle(video_files)
     concat_list = BASE / "video_concat.txt"
-    selected = []
-    total = 0
-    while total < duration:
-        for f in video_files:
-            selected.append(f)
-            total += 30
-            if total >= duration:
-                break
     with open(concat_list, "w", encoding="utf-8") as f:
-        for vf in selected:
-            f.write(f"file '{vf}'\n")
+        for _ in range(500):
+            for vf in video_files:
+                f.write(f"file '{vf}'\n")
     run_ffmpeg([
-        "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-stream_loop", "-1",
+        "ffmpeg", "-y", "-f", "concat", "-safe", "0",
         "-i", str(concat_list),
         "-t", str(duration),
         "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=24,format=yuv420p",
@@ -172,17 +179,10 @@ def build_video_vertical(tipo, duration, output_path):
         raise Exception("No hay videos verticales")
     random.shuffle(video_files)
     concat_list = BASE / "video_concat_v.txt"
-    selected = []
-    total = 0
-    while total < duration:
-        for f in video_files:
-            selected.append(f)
-            total += 30
-            if total >= duration:
-                break
     with open(concat_list, "w", encoding="utf-8") as f:
-        for vf in selected:
-            f.write(f"file '{vf}'\n")
+        for _ in range(20):
+            for vf in video_files:
+                f.write(f"file '{vf}'\n")
     run_ffmpeg([
         "ffmpeg", "-y", "-f", "concat", "-safe", "0",
         "-i", str(concat_list),
@@ -233,11 +233,11 @@ def create_thumbnail_largo(tipo, titulo, duration_h, video_path, output_path):
         font_big = ImageFont.load_default()
         font_med = font_big
         font_small = font_big
-    draw.ellipse([(30, 25), (130, 125)], fill=(255, 200, 0))
-    draw.text((80, 75), f"{duration_h}H", font=font_med, fill=(20, 10, 50), anchor="mm")
+    draw.ellipse([(30, 25), (145, 140)], fill=(255, 200, 0))
+    draw.text((87, 82), f"{duration_h}H", font=font_med, fill=(20, 10, 50), anchor="mm")
     titulo_clean = clean_text(titulo)
     lines = textwrap.wrap(titulo_clean, width=22)
-    y = 220
+    y = 230
     for line in lines[:3]:
         draw.text((640, y), line, font=font_big, fill=(255, 255, 255), anchor="mm",
                   stroke_width=3, stroke_fill=(0, 0, 0))
@@ -258,24 +258,30 @@ def create_thumbnail_short(tipo, frase, video_path, output_path):
         img = Image.open(str(frame_path)).convert("RGB").resize((1080, 1920))
     except:
         img = Image.new("RGB", (1080, 1920), color=(10, 8, 25))
-    overlay = Image.new("RGBA", (1080, 1920), (0, 0, 0, 120))
+    overlay = Image.new("RGBA", (1080, 1920), (0, 0, 0, 100))
     img = Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB")
     draw = ImageDraw.Draw(img)
     try:
-        font_big = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 80)
-        font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 45)
+        font_big = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 85)
+        font_med = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 52)
+        font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 42)
     except:
         font_big = ImageFont.load_default()
+        font_med = font_big
         font_small = font_big
+    draw.rectangle([(0, 720), (1080, 1200)], fill=(0, 0, 0, 180))
     frase_clean = clean_text(frase)
-    lines = textwrap.wrap(frase_clean, width=18)
+    lines = textwrap.wrap(frase_clean, width=16)
     y = 820
     for line in lines:
         draw.text((540, y), line, font=font_big, fill=(255, 255, 255), anchor="mm",
                   stroke_width=4, stroke_fill=(0, 0, 0))
-        y += 100
-    draw.text((540, 1860), "FogWindowBeats", font=font_small,
-              fill=(180, 180, 255), anchor="mm")
+        y += 105
+    draw.text((540, 1150), "FogWindowBeats", font=font_med,
+              fill=(180, 200, 255), anchor="mm")
+    draw.rectangle([(0, 1820), (1080, 1920)], fill=(0, 0, 0, 160))
+    draw.text((540, 1870), "Suscribete para mas lofi", font=font_small,
+              fill=(200, 200, 255), anchor="mm")
     img.save(str(output_path), "JPEG", quality=95)
     if frame_path.exists():
         frame_path.unlink()
@@ -291,19 +297,19 @@ def generate_metadata_largo(tipo, duration_h):
     prompt = f"""Eres experto en SEO y marketing de YouTube especializado en musica lofi.
 Genera metadata VIRAL para video tipo "{tipo}", duracion {duration_h} horas.
 
-REGLAS TITULO:
+REGLAS TITULO (MUY IMPORTANTE):
 - Maximo 80 caracteres
-- Irresistible, emocional, que genere clic
-- Incluye duracion: {duration_h} horas
-- Ejemplos BUENOS: "3 Horas de Lluvia + Lofi para Estudiar Sin Parar", "No Podras Dejar de Estudiar con Este Lofi - 2 Horas"
-- Ejemplos MALOS: "Musica Lofi para Estudiar 3.0 horas"
+- Irresistible, emocional, que genere clic inmediato
+- Incluye duracion exacta: {duration_h} horas
+- Estilo: "3 Horas de Lluvia + Lofi para Estudiar Sin Parar", "No Podras Dejar de Estudiar - 4 Horas Lofi"
+- NUNCA: "Musica Lofi para Estudiar 3.0 horas"
 
 TIPO: {tipo}
-EMOCIONES: lofi_estudio=concentracion cafe madrugada, lluvia_lofi=lluvia cozy noche, jazz_lofi=elegancia cafe nocturno, naturaleza=paz bosque, lofi_dormir=relajacion calma, piano_relajante=belleza emocion
+EMOCIONES: lofi_estudio=concentracion cafe madrugada productividad, lluvia_lofi=lluvia cozy noche tormenta perfecta, jazz_lofi=elegancia cafe nocturno smooth, naturaleza=paz bosque aire fresco, lofi_dormir=relajacion profunda calma mente, piano_relajante=belleza emocion alma
 
-JSON con:
-- titulo: string viral
-- descripcion: 500 palabras emotiva con timestamps:\n{timestamps}\nminimo 15 hashtags al final
+JSON con exactamente estas claves:
+- titulo: string viral segun reglas arriba
+- descripcion: texto de 500 palabras emotivo con beneficios, timestamps:\n{timestamps}\nminimo 15 hashtags al final
 - tags: lista de 25 strings SEO en espanol e ingles
 """
     r = client.chat.completions.create(
@@ -317,25 +323,45 @@ JSON con:
 def generate_metadata_short(tipo, frase):
     client = Groq(api_key=GROQ_API_KEY)
     prompt = f"""Eres experto en YouTube Shorts virales de lofi.
-Genera metadata para Short tipo "{tipo}", frase: "{frase}"
+Genera metadata para Short tipo "{tipo}", frase central: "{frase}"
 
-REGLAS TITULO:
-- Maximo 60 chars, genera curiosidad o identificacion inmediata
-- Estilo casual minusculas con emojis
-- Ejemplos: "POV: son las 3am y tienes que entregar", "cuando el lofi te salva la vida"
+REGLAS TITULO (MUY IMPORTANTE):
+- Maximo 60 chars
+- Genera curiosidad o identificacion inmediata
+- Estilo casual minusculas
+- Ejemplos BUENOS: "pov: son las 3am y tienes que entregar", "cuando el lofi te salva la vida", "modo biblioteca activado"
 
-JSON con:
-- titulo: string viral casual
-- descripcion: 2 lineas emotivas + hashtags #lofi #shorts #estudiar #concentracion #fyp #parati
-- tags: lista de 15 tags cortos
+JSON con exactamente estas claves:
+- titulo: string viral casual en espanol minusculas
+- descripcion: 3 lineas emotivas + hashtags #lofi #shorts #estudiar #concentracion #fyp #parati #musicalofi #lofihiphop
+- tags: lista de 15 tags cortos lofi shorts viral
 """
     r = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
-        max_tokens=500
+        max_tokens=600
     )
     return json.loads(r.choices[0].message.content, strict=False)
+
+def post_comment(service, video_id, comment_text):
+    try:
+        service.commentThreads().insert(
+            part="snippet",
+            body={
+                "snippet": {
+                    "videoId": video_id,
+                    "topLevelComment": {
+                        "snippet": {
+                            "textOriginal": comment_text
+                        }
+                    }
+                }
+            }
+        ).execute()
+        print(f"Comentario publicado en {video_id}")
+    except Exception as e:
+        print(f"Error comentario: {e}")
 
 def upload_youtube(service, video_path, thumbnail_path, metadata):
     body = {
@@ -386,6 +412,9 @@ def pipeline_largo(tipo, service, tmp):
     create_thumbnail_largo(tipo, metadata["titulo"], duration_h, video_raw, thumbnail)
     send_telegram("Subiendo a YouTube...")
     video_id = upload_youtube(service, video_final, thumbnail, metadata)
+    comentario = f"Escucha en bucle para maxima concentracion! Suscribete para mas lofi todos los dias. FogWindowBeats"
+    time.sleep(5)
+    post_comment(service, video_id, comentario)
     for f in [audio_out, video_raw, video_final, thumbnail]:
         try: f.unlink()
         except: pass
@@ -410,6 +439,9 @@ def pipeline_short(tipo, service, tmp):
     create_thumbnail_short(tipo, frase, video_raw, thumbnail)
     send_telegram("Subiendo Short...")
     video_id = upload_youtube(service, video_final, thumbnail, metadata)
+    comentario = random.choice(COMENTARIOS_SHORT)
+    time.sleep(5)
+    post_comment(service, video_id, comentario)
     for f in [audio_out, video_raw, video_final, thumbnail]:
         try: f.unlink()
         except: pass

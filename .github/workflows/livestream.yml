@@ -13,8 +13,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Python setup
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar dependencias
+        run: pip install groq google-auth-oauthlib google-api-python-client requests
+
       - name: Instalar FFmpeg
         run: sudo apt-get install -y ffmpeg
+
+      - name: Restaurar token
+        run: echo "${{ secrets.YOUTUBE_TOKEN }}" | base64 -d > token.pickle
 
       - name: Descargar videos Pexels
         env:
@@ -34,6 +45,8 @@ jobs:
               "rain street night city",
               "forest rain nature calm",
               "coffee shop rain window",
+              "rain window dark night close",
+              "heavy rain window blur night",
           ]
 
           def get_best_url(video_files):
@@ -84,7 +97,7 @@ jobs:
           downloaded = 0
           random.shuffle(QUERIES)
           for query in QUERIES:
-              if downloaded >= 6:
+              if downloaded >= 8:
                   break
               print(f"Buscando: '{query}'")
               try:
@@ -100,7 +113,7 @@ jobs:
                   videos = r.json().get("videos", [])
                   random.shuffle(videos)
                   for v in videos:
-                      if downloaded >= 6:
+                      if downloaded >= 8:
                           break
                       url = get_best_url(v.get("video_files", []))
                       if not url:
@@ -124,28 +137,125 @@ jobs:
           mkdir -p assets/audio_lofi
           cp assets/audio_small/* assets/audio_lofi/ 2>/dev/null || true
 
-      - name: Crear concat lists
+      - name: Crear transmision y comentario inicial
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           python - <<'PYEOF'
-          import glob, random
-          from pathlib import Path
+          import os, pickle, random, requests
+          from googleapiclient.discovery import build
+          from google.auth.transport.requests import Request
 
-          videos = glob.glob("assets/live_videos/*.mp4")
-          audios = glob.glob("assets/audio_lofi/*.mp3")
-          random.shuffle(videos)
-          random.shuffle(audios)
+          TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
+          TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
+          GROQ_API_KEY = os.environ["GROQ_API_KEY"]
 
-          with open("live_video_concat.txt", "w") as f:
-              for _ in range(200):
-                  for v in videos:
-                      f.write(f"file '{v}'\n")
+          from groq import Groq
+          client = Groq(api_key=GROQ_API_KEY)
 
-          with open("live_audio_concat.txt", "w") as f:
-              for _ in range(500):
-                  for a in audios:
-                      f.write(f"file '{a}'\n")
+          TEMAS = [
+              "lluvia en ventana de noche para estudiar",
+              "lofi con lluvia para concentrarse",
+              "lluvia relajante para trabajar",
+              "lofi nocturno con lluvia para dormir",
+              "lluvia y lofi para madrugada productiva"
+          ]
+          tema = random.choice(TEMAS)
 
-          print("Concat lists creadas")
+          prompt = f"""Genera metadata VIRAL para un livestream de YouTube de musica lofi con lluvia, tema: "{tema}".
+
+JSON con:
+- titulo: max 80 chars, viral, emojis, incluye "EN VIVO" o "LIVE" o "24/7", ejemplo: "LIVE: Lluvia + Lofi 24/7 para Estudiar y Concentrarse"
+- descripcion: 300 palabras emotiva, beneficios del lofi, call to action suscribirse, hashtags al final
+- comentario_inicio: mensaje corto y motivador para publicar al inicio del live, max 200 chars
+"""
+          r = client.chat.completions.create(
+              model="llama-3.3-70b-versatile",
+              messages=[{"role": "user", "content": prompt}],
+              response_format={"type": "json_object"},
+              max_tokens=1000
+          )
+          import json
+          meta = json.loads(r.choices[0].message.content, strict=False)
+
+          with open("token.pickle", "rb") as f:
+              import pickle
+              creds = pickle.load(f)
+          if creds.expired and creds.refresh_token:
+              creds.refresh(Request())
+          service = build("youtube", "v3", credentials=creds)
+
+          titulo = meta["titulo"].encode("ascii","ignore").decode()
+          descripcion = meta["descripcion"].encode("ascii","ignore").decode()
+          comentario = meta.get("comentario_inicio","Bienvenidos al live de FogWindowBeats! Suscribete para mas lofi todos los dias.").encode("ascii","ignore").decode()
+
+          broadcast = service.liveBroadcasts().insert(
+              part="snippet,status,contentDetails",
+              body={
+                  "snippet": {
+                      "title": titulo,
+                      "description": descripcion,
+                      "scheduledStartTime": "2026-01-01T00:00:00Z"
+                  },
+                  "status": {
+                      "privacyStatus": "public",
+                      "selfDeclaredMadeForKids": False
+                  },
+                  "contentDetails": {
+                      "enableAutoStart": True,
+                      "enableAutoStop": True,
+                      "latencyPreference": "normal"
+                  }
+              }
+          ).execute()
+          broadcast_id = broadcast["id"]
+
+          streams = service.liveStreams().list(part="id,snippet", mine=True).execute()
+          stream_id = None
+          for s in streams.get("items", []):
+              stream_id = s["id"]
+              break
+
+          if not stream_id:
+              stream = service.liveStreams().insert(
+                  part="snippet,cdn",
+                  body={
+                      "snippet": {"title": "FogWindowBeats Stream"},
+                      "cdn": {
+                          "frameRate": "24fps",
+                          "ingestionType": "rtmp",
+                          "resolution": "1080p"
+                      }
+                  }
+              ).execute()
+              stream_id = stream["id"]
+
+          service.liveBroadcasts().bind(
+              part="id,contentDetails",
+              id=broadcast_id,
+              streamId=stream_id
+          ).execute()
+
+          with open("broadcast_id.txt", "w") as f:
+              f.write(broadcast_id)
+          with open("live_comment.txt", "w") as f:
+              f.write(comentario)
+
+          def send_telegram(msg):
+              try:
+                  requests.post(
+                      f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+                      data={"chat_id": TELEGRAM_CHAT_ID, "text": msg},
+                      timeout=10
+                  )
+              except:
+                  pass
+
+          send_telegram(f"LIVE iniciando\n{titulo}\nhttps://youtu.be/{broadcast_id}")
+          print(f"Broadcast creado: {broadcast_id}")
+          print(f"Titulo: {titulo}")
           PYEOF
 
       - name: Iniciar livestream 11 horas
@@ -153,11 +263,36 @@ jobs:
           YOUTUBE_STREAM_KEY: ${{ secrets.YOUTUBE_STREAM_KEY }}
         run: |
           ffmpeg \
-            -f concat -safe 0 -stream_loop -1 -i live_video_concat.txt \
-            -f concat -safe 0 -stream_loop -1 -i live_audio_concat.txt \
+            -f concat -safe 0 -stream_loop -1 -i <(for f in assets/live_videos/*.mp4; do echo "file '$f'"; done) \
+            -f concat -safe 0 -stream_loop -1 -i <(for f in assets/audio_lofi/*.mp3; do echo "file '$f'"; done) \
             -vf "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=24,format=yuv420p,drawtext=text=FogWindowBeats:fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:fontsize=38:fontcolor=white@0.65:x=(w-text_w)/2:y=25:shadowcolor=black@0.6:shadowx=2:shadowy=2" \
             -c:v libx264 -preset veryfast -b:v 3000k -maxrate 3000k -bufsize 6000k \
             -r 24 -g 48 -keyint_min 48 \
             -c:a aac -b:a 128k -ar 44100 \
             -t 39600 \
-            -f flv "rtmp://a.rtmp.youtube.com/live2/${{ secrets.YOUTUBE_STREAM_KEY }}"
+            -f flv "rtmp://a.rtmp.youtube.com/live2/${{ secrets.YOUTUBE_STREAM_KEY }}" &
+          FFMPEG_PID=$!
+          sleep 30
+          python - <<'PYEOF'
+          import pickle, os
+          from googleapiclient.discovery import build
+          from google.auth.transport.requests import Request
+          with open("token.pickle","rb") as f:
+              creds = pickle.load(f)
+          if creds.expired and creds.refresh_token:
+              creds.refresh(Request())
+          service = build("youtube","v3",credentials=creds)
+          with open("broadcast_id.txt") as f:
+              broadcast_id = f.read().strip()
+          with open("live_comment.txt") as f:
+              comentario = f.read().strip()
+          try:
+              service.commentThreads().insert(
+                  part="snippet",
+                  body={"snippet":{"videoId":broadcast_id,"topLevelComment":{"snippet":{"textOriginal":comentario}}}}
+              ).execute()
+              print(f"Comentario publicado: {comentario}")
+          except Exception as e:
+              print(f"Error comentario: {e}")
+          PYEOF
+          wait $FFMPEG_PID
