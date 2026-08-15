@@ -183,8 +183,8 @@ jobs:
               f.write(tipo)
 
           queries = TIPO_QUERIES[tipo]
-          h = fetch(queries["landscape"], f"assets/videos_{tipo}_h", "landscape", target=4)
-          v = fetch(queries["portrait"],  f"assets/videos_{tipo}_v", "portrait",  target=4)
+          h = fetch(queries["landscape"], f"assets/videos_{tipo}_h", "landscape", target=8)
+          v = fetch(queries["portrait"],  f"assets/videos_{tipo}_v", "portrait",  target=8)
 
           if h == 0:
               raise Exception(f"Sin videos horizontales para {tipo}")

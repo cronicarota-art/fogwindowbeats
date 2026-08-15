@@ -14,7 +14,7 @@ TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
 TIPOS = ["lofi_estudio", "lluvia_lofi", "jazz_lofi", "naturaleza", "lofi_dormir", "piano_relajante"]
 DURACIONES_LARGO = [7200, 10800, 14400, 21600, 28800]
-DURACIONES_SHORT = [15, 30, 45, 60]
+DURACIONES_SHORT = [40, 45, 50, 60]
 
 AUDIO_MAP = {
     "lofi_estudio":    "audio_lofi",
@@ -155,7 +155,7 @@ def build_video_horizontal(tipo, duration, output_path):
         for vf in selected:
             f.write(f"file '{vf}'\n")
     run_ffmpeg([
-        "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+        "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-stream_loop", "-1",
         "-i", str(concat_list),
         "-t", str(duration),
         "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=24,format=yuv420p",
