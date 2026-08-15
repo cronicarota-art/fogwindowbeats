@@ -10,7 +10,7 @@ on:
 jobs:
   run-pipeline:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,130 +29,131 @@ jobs:
       - name: Restaurar token
         run: echo "${{ secrets.YOUTUBE_TOKEN }}" | base64 -d > token.pickle
 
-      - name: Descargar videos Pexels HD
+      - name: Descargar y normalizar videos Pexels
         env:
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
         run: |
           python - <<'PYEOF'
-          import requests, os, random, time
+          import requests, os, random, time, subprocess
           from pathlib import Path
 
           API_KEY = os.environ["PEXELS_API_KEY"]
           HEADERS = {"Authorization": API_KEY}
 
-          VIDEO_MAP = {
-              "assets/videos_lofi": {
-                  "orientation": "landscape",
-                  "queries": [
-                      "study desk lamp night",
-                      "coffee shop window night",
-                      "cozy room reading lamp",
-                      "desk books coffee lamp",
-                      "night room lamp warm light",
-                  ]
+          TIPO_QUERIES = {
+              "lofi_estudio": {
+                  "landscape": ["study desk lamp night dark", "books desk lamp cozy night", "coffee desk studying night"],
+                  "portrait":  ["study desk vertical night", "books lamp vertical cozy", "coffee studying vertical"]
               },
-              "assets/videos_lluvia": {
-                  "orientation": "landscape",
-                  "queries": [
-                      "rain drops window glass",
-                      "heavy rain falling street night",
-                      "rain window close up drops",
-                      "rain storm city night",
-                      "rain puddle street night",
-                  ]
+              "lluvia_lofi": {
+                  "landscape": ["rain drops on window glass", "rain falling window night", "heavy rain window close up"],
+                  "portrait":  ["rain drops window vertical", "rain falling vertical close", "rain glass vertical"]
               },
-              "assets/videos_naturaleza": {
-                  "orientation": "landscape",
-                  "queries": [
-                      "forest rain trees nature",
-                      "waterfall river nature calm",
-                      "ocean waves shore peaceful",
-                      "river stream forest",
-                      "nature rain green trees",
-                  ]
+              "jazz_lofi": {
+                  "landscape": ["jazz bar night warm lights", "saxophone night club dark", "night bar warm city lights"],
+                  "portrait":  ["night bar vertical lights", "jazz club vertical dark", "city night vertical warm"]
               },
-              "assets/videos_vertical": {
-                  "orientation": "portrait",
-                  "queries": [
-                      "rain window vertical drops",
-                      "rain falling vertical close",
-                      "candle flame close vertical",
-                      "forest rain vertical nature",
-                      "night rain street vertical",
-                  ]
+              "naturaleza": {
+                  "landscape": ["forest rain trees calm", "waterfall river nature peaceful", "ocean waves shore calm"],
+                  "portrait":  ["forest rain vertical nature", "waterfall vertical nature", "ocean waves vertical"]
+              },
+              "lofi_dormir": {
+                  "landscape": ["candle flame dark room night", "moonlight night dark room", "night bedroom dark candle"],
+                  "portrait":  ["candle flame vertical dark", "moonlight vertical night", "dark room candle vertical"]
+              },
+              "piano_relajante": {
+                  "landscape": ["piano keys hands playing", "grand piano concert hall", "piano music elegant room"],
+                  "portrait":  ["piano keys vertical close", "piano playing hands vertical", "elegant room vertical"]
               },
           }
 
           def get_best_url(video_files, orientation):
               if orientation == "landscape":
                   preferred = [f for f in video_files
-                               if f.get("width", 0) >= 1920
-                               and f.get("height", 0) <= 1080
+                               if f.get("width",0) >= 1920 and f.get("height",0) <= 1080
                                and f.get("file_type") == "video/mp4"]
                   if not preferred:
                       preferred = [f for f in video_files
-                                   if f.get("width", 0) >= 1280
+                                   if f.get("width",0) >= 1280
                                    and f.get("file_type") == "video/mp4"]
               else:
                   preferred = [f for f in video_files
-                               if f.get("height", 0) >= 1920
-                               and f.get("width", 0) <= 1080
+                               if f.get("height",0) >= 1920 and f.get("width",0) <= 1080
                                and f.get("file_type") == "video/mp4"]
                   if not preferred:
                       preferred = [f for f in video_files
-                                   if f.get("height", 0) >= f.get("width", 1)
+                                   if f.get("height",0) >= f.get("width",1)
                                    and f.get("file_type") == "video/mp4"]
               if not preferred:
                   preferred = [f for f in video_files if f.get("file_type") == "video/mp4"]
-              preferred.sort(key=lambda x: x.get("width", 0) * x.get("height", 0), reverse=True)
+              preferred.sort(key=lambda x: x.get("width",0)*x.get("height",0), reverse=True)
               return preferred[0]["link"] if preferred else None
 
-          def download_video(url, out_path):
+          def normalize_video(input_path, output_path, orientation):
+              if orientation == "landscape":
+                  vf = "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=24,format=yuv420p"
+                  fps = "24"
+              else:
+                  vf = "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=30,format=yuv420p"
+                  fps = "30"
+              r = subprocess.run([
+                  "ffmpeg", "-y", "-i", str(input_path),
+                  "-vf", vf,
+                  "-r", fps,
+                  "-vsync", "cfr",
+                  "-c:v", "libx264", "-preset", "fast", "-crf", "26",
+                  "-an", str(output_path)
+              ], capture_output=True)
+              return r.returncode == 0
+
+          def download_and_normalize(url, out_path, orientation):
+              tmp = out_path.with_suffix(".tmp.mp4")
               try:
                   resp = requests.get(url, stream=True, timeout=90)
                   resp.raise_for_status()
                   total = 0
-                  with open(out_path, "wb") as f:
+                  with open(tmp, "wb") as f:
                       for chunk in resp.iter_content(chunk_size=1024*1024):
                           f.write(chunk)
                           total += len(chunk)
-                  size_mb = total / (1024*1024)
-                  if size_mb < 1.0:
-                      os.remove(out_path)
-                      print(f"  Descartado ({size_mb:.1f}MB muy pequeÃ±o)")
+                  if total < 1024*1024:
+                      tmp.unlink(missing_ok=True)
+                      print(f"  Descartado (muy pequeno)")
                       return False
-                  print(f"  âœ“ {size_mb:.1f}MB â†’ {out_path}")
+                  if not normalize_video(tmp, out_path, orientation):
+                      tmp.unlink(missing_ok=True)
+                      if out_path.exists(): out_path.unlink()
+                      print(f"  Error normalizando")
+                      return False
+                  tmp.unlink(missing_ok=True)
+                  size = out_path.stat().st_size / (1024*1024)
+                  print(f"  OK {size:.1f}MB CFR {orientation} -> {out_path.name}")
                   return True
               except Exception as e:
                   print(f"  Error: {e}")
-                  if os.path.exists(out_path):
-                      os.remove(out_path)
+                  for p in [tmp, out_path]:
+                      if p.exists(): p.unlink(missing_ok=True)
                   return False
 
-          def fetch_videos(folder, orientation, queries, target=4):
+          def fetch(queries, folder, orientation, target=4):
               Path(folder).mkdir(parents=True, exist_ok=True)
               downloaded = 0
               random.shuffle(queries)
               for query in queries:
                   if downloaded >= target:
                       break
-                  print(f"[{folder}] Buscando: '{query}'")
+                  print(f"[{orientation}] Buscando: '{query}'")
                   try:
                       r = requests.get(
                           "https://api.pexels.com/videos/search",
                           headers=HEADERS,
-                          params={
-                              "query": query,
-                              "per_page": 10,
-                              "orientation": orientation,
-                              "size": "large",
-                              "min_duration": 8,
-                          },
+                          params={"query": query, "per_page": 10,
+                                  "orientation": orientation, "size": "large",
+                                  "min_duration": 8},
                           timeout=30
                       )
                       r.raise_for_status()
                       videos = r.json().get("videos", [])
-                      print(f"  Encontrados: {len(videos)}")
                       random.shuffle(videos)
                       for v in videos:
                           if downloaded >= target:
@@ -162,27 +163,34 @@ jobs:
                           url = get_best_url(v.get("video_files", []), orientation)
                           if not url:
                               continue
-                          out = f"{folder}/pexels_{v['id']}.mp4"
-                          if Path(out).exists():
+                          out = Path(folder) / f"pexels_{v['id']}.mp4"
+                          if out.exists():
                               downloaded += 1
                               continue
-                          if download_video(url, out):
+                          if download_and_normalize(url, out, orientation):
                               downloaded += 1
                       time.sleep(0.5)
                   except Exception as e:
                       print(f"  Error: {e}")
                       time.sleep(2)
-              print(f"  Total en {folder}: {downloaded}\n")
+              print(f"  Total {folder}: {downloaded}")
               return downloaded
 
-          total = 0
-          for folder, cfg in VIDEO_MAP.items():
-              n = fetch_videos(folder, cfg["orientation"], cfg["queries"], target=4)
-              total += n
+          import random as rnd
+          tipo = rnd.choice(list(TIPO_QUERIES.keys()))
+          print(f"=== Tipo seleccionado: {tipo} ===")
+          with open("selected_tipo.txt", "w") as f:
+              f.write(tipo)
 
-          if total == 0:
-              raise Exception("No se descargaron videos")
-          print(f"=== Descarga completa: {total} videos ===")
+          queries = TIPO_QUERIES[tipo]
+          h = fetch(queries["landscape"], f"assets/videos_{tipo}_h", "landscape", target=4)
+          v = fetch(queries["portrait"],  f"assets/videos_{tipo}_v", "portrait",  target=4)
+
+          if h == 0:
+              raise Exception(f"Sin videos horizontales para {tipo}")
+          if v == 0:
+              raise Exception(f"Sin videos verticales para {tipo}")
+          print(f"=== Total: {h} horizontales CFR, {v} verticales CFR ===")
           PYEOF
 
       - name: Preparar assets audio
@@ -197,4 +205,6 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python scripts/pipeline.py
+        run: |
+          TIPO=$(cat selected_tipo.txt)
+          VIDEO_TIPO_H="assets/videos_${TIPO}_h" VIDEO_TIPO_V="assets/videos_${TIPO}_v" VIDEO_TIPO=$TIPO python scripts/pipeline.py
