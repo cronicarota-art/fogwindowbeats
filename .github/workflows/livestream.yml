@@ -4,11 +4,14 @@ on:
   workflow_dispatch:
   schedule:
     - cron: '0 0 * * *'
+    - cron: '0 6 * * *'
+    - cron: '0 12 * * *'
+    - cron: '0 18 * * *'
 
 jobs:
   livestream:
     runs-on: ubuntu-latest
-    timeout-minutes: 720
+    timeout-minutes: 355
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -317,7 +320,7 @@ JSON con:
             -c:v libx264 -preset veryfast -b:v 3000k -maxrate 3000k -bufsize 6000k \
             -r 24 -g 48 -keyint_min 48 \
             -c:a aac -b:a 128k -ar 44100 \
-            -t 39600 \
+            -t 19800 \
             -f flv "rtmp://a.rtmp.youtube.com/live2/${{ secrets.YOUTUBE_STREAM_KEY }}" &
           FFMPEG_PID=$!
           sleep 45
