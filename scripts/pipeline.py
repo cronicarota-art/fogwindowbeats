@@ -16,6 +16,15 @@ TIPOS = ["lofi_estudio", "lluvia_lofi", "jazz_lofi", "naturaleza", "lofi_dormir"
 DURACIONES_LARGO = [7200, 10800, 14400, 21600, 28800]
 DURACIONES_SHORT = [40, 45, 50, 60]
 
+PLAYLIST_IDS = {
+    "lofi_estudio":    "PLbwFMyRnG7C0",
+    "lluvia_lofi":     "PLCbT9Ko2UMhM",
+    "jazz_lofi":       "PLSuvg6D8DrD0",
+    "naturaleza":      "PLOh-Zj0_emfg",
+    "lofi_dormir":     "PLYDHZ2vnDQTI",
+    "piano_relajante": "PLYchg6cgQm3k"
+}
+
 AUDIO_MAP = {
     "lofi_estudio":    "audio_lofi",
     "lluvia_lofi":     "audio_lofi",
@@ -70,6 +79,15 @@ ETIQUETAS = {
     "piano_relajante": "piano relajante"
 }
 
+COLORES_TIPO = {
+    "lofi_estudio":    [(20, 20, 60), (80, 40, 180), (40, 180, 220)],
+    "lluvia_lofi":     [(10, 20, 50), (30, 80, 180), (80, 200, 255)],
+    "jazz_lofi":       [(40, 15, 10), (180, 80, 20), (220, 160, 40)],
+    "naturaleza":      [(10, 30, 15), (20, 120, 50), (80, 220, 100)],
+    "lofi_dormir":     [(15, 10, 40), (60, 20, 120), (140, 60, 200)],
+    "piano_relajante": [(30, 10, 40), (140, 40, 160), (220, 100, 240)]
+}
+
 WATERMARK_H = "drawtext=text=FogWindowBeats:fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:fontsize=38:fontcolor=white@0.65:x=(w-text_w)/2:y=25:shadowcolor=black@0.6:shadowx=2:shadowy=2"
 WATERMARK_V = "drawtext=text=FogWindowBeats:fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:fontsize=46:fontcolor=white@0.65:x=(w-text_w)/2:y=25:shadowcolor=black@0.6:shadowx=2:shadowy=2"
 
@@ -77,18 +95,13 @@ def clean_text(text):
     return text.encode("ascii", "ignore").decode("ascii")
 
 def clean_for_telegram(text):
-    import re
     return re.sub(r"[^\x00-\x7F]+", "", text).strip()
 
 def send_telegram(msg):
     try:
         requests.post(
             f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-            data={
-                "chat_id": TELEGRAM_CHAT_ID,
-                "text": clean_for_telegram(msg),
-                "parse_mode": "HTML"
-            },
+            data={"chat_id": TELEGRAM_CHAT_ID, "text": clean_for_telegram(msg), "parse_mode": "HTML"},
             timeout=10
         )
     except:
@@ -261,34 +274,42 @@ def create_thumbnail_largo(tipo, titulo, duration_h, video_path, output_path):
 
 def create_thumbnail_short(tipo, frase, video_path, output_path):
     frame_path = output_path.parent / "frame_s_tmp.jpg"
+    bg, c1, c2 = COLORES_TIPO.get(tipo, [(10,8,25),(80,40,180),(40,180,220)])
     try:
         extract_frame(video_path, frame_path, 1080, 1920)
         img = Image.open(str(frame_path)).convert("RGB").resize((1080, 1920))
     except:
-        img = Image.new("RGB", (1080, 1920), color=(10, 8, 25))
-    overlay = Image.new("RGBA", (1080, 1920), (0, 0, 0, 100))
+        img = Image.new("RGB", (1080, 1920), color=bg)
+    overlay = Image.new("RGBA", (1080, 1920), (0, 0, 0, 110))
     img = Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB")
     draw = ImageDraw.Draw(img)
+    draw.ellipse([(-100, 600), (500, 1200)], fill=(*c1, 60))
+    draw.ellipse([(600, 900), (1200, 1500)], fill=(*c2, 50))
     try:
-        font_big = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 85)
-        font_med = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 52)
+        font_big = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 90)
+        font_med = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 55)
         font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 42)
     except:
         font_big = ImageFont.load_default()
         font_med = font_big
         font_small = font_big
-    draw.rectangle([(0, 720), (1080, 1200)], fill=(0, 0, 0, 180))
     frase_clean = clean_text(frase)
-    lines = textwrap.wrap(frase_clean, width=16)
-    y = 820
+    lines = textwrap.wrap(frase_clean, width=15)
+    total_h = len(lines) * 110
+    y = (1920 - total_h) // 2 - 50
+    pad = 30
+    box_top = y - pad
+    box_bot = y + total_h + pad
+    draw.rectangle([(40, box_top), (1040, box_bot)], fill=(0, 0, 0, 180))
     for line in lines:
         draw.text((540, y), line, font=font_big, fill=(255, 255, 255), anchor="mm",
                   stroke_width=4, stroke_fill=(0, 0, 0))
-        y += 105
-    draw.text((540, 1150), "FogWindowBeats", font=font_med,
-              fill=(180, 200, 255), anchor="mm")
-    draw.rectangle([(0, 1820), (1080, 1920)], fill=(0, 0, 0, 160))
-    draw.text((540, 1870), "Suscribete para mas lofi", font=font_small,
+        y += 110
+    draw.rectangle([(0, 0), (1080, 90)], fill=(0, 0, 0, 160))
+    draw.text((540, 45), "FogWindowBeats", font=font_med,
+              fill=(200, 210, 255), anchor="mm")
+    draw.rectangle([(0, 1830), (1080, 1920)], fill=(0, 0, 0, 160))
+    draw.text((540, 1875), "Suscribete para mas lofi", font=font_small,
               fill=(200, 200, 255), anchor="mm")
     img.save(str(output_path), "JPEG", quality=95)
     if frame_path.exists():
@@ -302,14 +323,14 @@ def generate_metadata_largo(tipo, duration_h):
         h = i // 60
         m = i % 60
         timestamps += f"{h:02d}:{m:02d}:00 - Lofi Mix\n"
+    canal = "https://www.youtube.com/@FogWindowBeats"
     prompt = f"""Eres experto en SEO y marketing de YouTube especializado en musica lofi.
-Genera metadata VIRAL para video tipo "{tipo}", duracion {duration_h} horas.
+Genera metadata VIRAL para video tipo "{tipo}".
 
 REGLAS TITULO (MUY IMPORTANTE):
 - Maximo 80 caracteres
-- Irresistible, emocional, que genere clic inmediato
 - NO incluyas la duracion en el titulo
-- Enfocate en la EMOCION y el BENEFICIO, no en las horas
+- Enfocate en la EMOCION y el BENEFICIO
 - Estilo VIRAL: "La Lluvia Perfecta para Concentrarte sin Parar", "El Lofi que Necesitas para Estudiar Hoy", "Modo Focus: Musica Lofi para Trabajar sin Distracciones"
 - NUNCA: "Musica Lofi para Estudiar 3.0 horas", "Lofi Mix 2 horas"
 
@@ -317,9 +338,9 @@ TIPO: {tipo}
 EMOCIONES: lofi_estudio=concentracion cafe madrugada productividad, lluvia_lofi=lluvia cozy noche tormenta perfecta, jazz_lofi=elegancia cafe nocturno smooth, naturaleza=paz bosque aire fresco, lofi_dormir=relajacion profunda calma mente, piano_relajante=belleza emocion alma
 
 JSON con exactamente estas claves:
-- titulo: string viral segun reglas arriba
-- descripcion: texto de 500 palabras emotivo con beneficios, timestamps:\n{timestamps}\nminimo 15 hashtags al final
-- tags: lista de 25 strings SEO en espanol e ingles
+- titulo: string viral segun reglas
+- descripcion: 500 palabras emotiva, menciona el canal {canal}, incluye timestamps:\n{timestamps}\nminimo 15 hashtags al final
+- tags: lista de 30 strings SEO agresivos en espanol e ingles incluyendo: "lofi", "musica para estudiar", "lofi hip hop", "chill beats", "study music", "lofi music", "musica relajante", "concentracion", "focus music", "lofi beats"
 """
     r = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
@@ -339,12 +360,12 @@ REGLAS TITULO (MUY IMPORTANTE):
 - DEBE tener 2-3 emojis relevantes
 - Genera curiosidad o identificacion inmediata
 - Estilo casual minusculas con emojis
-- Ejemplos BUENOS: "pov: son las 3am y tienes que entregar ÃƒÂ°Ã…Â¸Ã…â€™Ã¢â€žÂ¢ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã…Â¡", "cuando el lofi te salva la vida ÃƒÂ°Ã…Â¸Ã…Â½Ã‚Â§ÃƒÂ¢Ã…â€œÃ‚Â¨", "modo biblioteca activado ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã¢â‚¬â€œÃƒÂ¢Ã‹Å“Ã¢â‚¬Â¢"
+- Ejemplos BUENOS: "pov: son las 3am y tienes que entregar", "cuando el lofi te salva la vida", "modo biblioteca activado"
 - NUNCA titulo sin emojis
 
 JSON con exactamente estas claves:
-- titulo: string viral casual en espanol minusculas
-- descripcion: 3 lineas emotivas + hashtags #lofi #shorts #estudiar #concentracion #fyp #parati #musicalofi #lofihiphop
+- titulo: string viral casual con emojis
+- descripcion: 3 lineas emotivas + hashtags #lofi #shorts #estudiar #concentracion #fyp #parati #musicalofi #lofihiphop #chillbeats #studymusic
 - tags: lista de 15 tags cortos lofi shorts viral
 """
     r = client.chat.completions.create(
@@ -355,6 +376,27 @@ JSON con exactamente estas claves:
     )
     return json.loads(r.choices[0].message.content, strict=False)
 
+def add_to_playlist(service, video_id, tipo):
+    playlist_id = PLAYLIST_IDS.get(tipo)
+    if not playlist_id:
+        return
+    try:
+        service.playlistItems().insert(
+            part="snippet",
+            body={
+                "snippet": {
+                    "playlistId": playlist_id,
+                    "resourceId": {
+                        "kind": "youtube#video",
+                        "videoId": video_id
+                    }
+                }
+            }
+        ).execute()
+        print(f"Agregado a playlist {tipo}: {playlist_id}")
+    except Exception as e:
+        print(f"Error playlist: {e}")
+
 def post_comment(service, video_id, comment_text):
     try:
         service.commentThreads().insert(
@@ -363,14 +405,12 @@ def post_comment(service, video_id, comment_text):
                 "snippet": {
                     "videoId": video_id,
                     "topLevelComment": {
-                        "snippet": {
-                            "textOriginal": comment_text
-                        }
+                        "snippet": {"textOriginal": comment_text}
                     }
                 }
             }
         ).execute()
-        print(f"Comentario publicado en {video_id}")
+        print(f"Comentario publicado")
     except Exception as e:
         print(f"Error comentario: {e}")
 
@@ -385,7 +425,8 @@ def upload_youtube(service, video_path, thumbnail_path, metadata):
         },
         "status": {
             "privacyStatus": "public",
-            "selfDeclaredMadeForKids": False
+            "selfDeclaredMadeForKids": False,
+            "publishAt": None
         }
     }
     media = MediaFileUpload(str(video_path), mimetype="video/mp4",
@@ -423,9 +464,9 @@ def pipeline_largo(tipo, service, tmp):
     create_thumbnail_largo(tipo, metadata["titulo"], duration_h, video_raw, thumbnail)
     send_telegram("Subiendo a YouTube...")
     video_id = upload_youtube(service, video_final, thumbnail, metadata)
-    comentario = f"Escucha en bucle para maxima concentracion! Suscribete para mas lofi todos los dias. FogWindowBeats"
+    add_to_playlist(service, video_id, tipo)
     time.sleep(5)
-    post_comment(service, video_id, comentario)
+    post_comment(service, video_id, "Escucha en bucle para maxima concentracion! Suscribete para mas lofi todos los dias. FogWindowBeats")
     for f in [audio_out, video_raw, video_final, thumbnail]:
         try: f.unlink()
         except: pass
@@ -439,7 +480,7 @@ def pipeline_short(tipo, service, tmp):
     video_raw = tmp / "video_raw_s.mp4"
     video_final = tmp / "video_final_s.mp4"
     thumbnail = tmp / "thumbnail_s.jpg"
-    send_telegram(f"SHORT iniciando | {tipo} | {duration}s")
+    send_telegram(f"<b>SHORT</b> | {tipo} | {duration}s")
     build_audio(tipo, duration, audio_out)
     send_telegram("Video vertical...")
     build_video_vertical(tipo, duration, video_raw)
@@ -450,9 +491,9 @@ def pipeline_short(tipo, service, tmp):
     create_thumbnail_short(tipo, frase, video_raw, thumbnail)
     send_telegram("Subiendo Short...")
     video_id = upload_youtube(service, video_final, thumbnail, metadata)
-    comentario = random.choice(COMENTARIOS_SHORT)
+    add_to_playlist(service, video_id, tipo)
     time.sleep(5)
-    post_comment(service, video_id, comentario)
+    post_comment(service, video_id, random.choice(COMENTARIOS_SHORT))
     for f in [audio_out, video_raw, video_final, thumbnail]:
         try: f.unlink()
         except: pass
@@ -472,7 +513,7 @@ def main():
         send_telegram(f"<b>LARGO publicado</b>\n{url_l}")
         print(f"LARGO: {url_l}")
     except Exception as e:
-        send_telegram(f"Error LARGO: {e}")
+        send_telegram(f"<b>Error LARGO:</b> {clean_for_telegram(str(e))}")
         print(f"ERROR LARGO: {e}")
     try:
         vid_s, titulo_s = pipeline_short(tipo_short, service, tmp)
@@ -480,7 +521,7 @@ def main():
         send_telegram(f"<b>SHORT publicado</b>\n{url_s}")
         print(f"SHORT: {url_s}")
     except Exception as e:
-        send_telegram(f"Error SHORT: {e}")
+        send_telegram(f"<b>Error SHORT:</b> {clean_for_telegram(str(e))}")
         print(f"ERROR SHORT: {e}")
 
 if __name__ == "__main__":

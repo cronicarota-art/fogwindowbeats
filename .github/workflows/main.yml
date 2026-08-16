@@ -3,9 +3,9 @@ name: FogWindowBeats Pipeline
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 10 * * *'
-    - cron: '0 16 * * *'
-    - cron: '0 22 * * *'
+    - cron: '0 11 * * *'
+    - cron: '0 17 * * *'
+    - cron: '0 23 * * *'
 
 jobs:
   run-pipeline:
