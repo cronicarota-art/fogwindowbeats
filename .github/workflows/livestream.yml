@@ -19,7 +19,7 @@ jobs:
           python-version: '3.11'
 
       - name: Instalar dependencias
-        run: pip install groq google-auth-oauthlib google-api-python-client requests
+        run: pip install groq google-auth-oauthlib google-api-python-client requests pillow
 
       - name: Instalar FFmpeg
         run: sudo apt-get install -y ffmpeg
@@ -137,24 +137,77 @@ jobs:
           mkdir -p assets/audio_lofi
           cp assets/audio_small/* assets/audio_lofi/ 2>/dev/null || true
 
-      - name: Crear transmision y comentario inicial
+      - name: Generar thumbnail livestream
+        run: |
+          python - <<'PYEOF'
+          from PIL import Image, ImageDraw, ImageFont
+          import random
+          from pathlib import Path
+
+          TEMAS = [
+              ((10,20,50),  (30,80,180),  (80,200,255), "Lluvia + Lofi EN VIVO"),
+              ((20,20,60),  (80,40,180),  (40,180,220), "Lofi para Estudiar EN VIVO"),
+              ((10,30,15),  (20,120,50),  (80,220,100), "Naturaleza + Lofi EN VIVO"),
+              ((15,10,40),  (60,20,120),  (140,60,200), "Lofi para Dormir EN VIVO"),
+          ]
+          bg, c1, c2, label = random.choice(TEMAS)
+          img = Image.new("RGB", (1280,720), color=bg)
+          draw = ImageDraw.Draw(img)
+          draw.ellipse([(-100,-100),(600,600)], fill=c1)
+          draw.ellipse([(700,200),(1400,900)], fill=c2)
+          overlay = Image.new("RGBA", (1280,720), (0,0,0,120))
+          img = Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB")
+          draw = ImageDraw.Draw(img)
+          try:
+              font_big = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 80)
+              font_med = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 50)
+              font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 36)
+          except:
+              font_big = ImageFont.load_default()
+              font_med = font_big
+              font_small = font_big
+          draw.rectangle([(0,0),(1280,80)], fill=(0,0,0))
+          draw.text((640,40), "FogWindowBeats", font=font_med, fill=(200,210,255), anchor="mm")
+          draw.ellipse([(540,250),(740,350)], fill=(255,0,0))
+          draw.text((640,300), "EN VIVO", font=font_med, fill=(255,255,255), anchor="mm")
+          draw.text((640,430), label, font=font_big, fill=(255,255,255), anchor="mm",
+                    stroke_width=3, stroke_fill=(0,0,0))
+          draw.rectangle([(0,640),(1280,720)], fill=(0,0,0))
+          draw.text((640,680), "24/7 Musica Lofi Continua - Suscribete!", font=font_small,
+                    fill=(180,200,255), anchor="mm")
+          Path("assets").mkdir(exist_ok=True)
+          img.save("assets/live_thumbnail.jpg", "JPEG", quality=95)
+          print(f"Thumbnail generado: {label}")
+          PYEOF
+
+      - name: Crear broadcast y configurar live
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           python - <<'PYEOF'
-          import os, pickle, random, requests
+          import os, pickle, random, requests, json
           from googleapiclient.discovery import build
+          from googleapiclient.http import MediaFileUpload
           from google.auth.transport.requests import Request
+          from groq import Groq
 
           TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
           TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
           GROQ_API_KEY = os.environ["GROQ_API_KEY"]
 
-          from groq import Groq
-          client = Groq(api_key=GROQ_API_KEY)
+          def send_telegram(msg):
+              try:
+                  requests.post(
+                      f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+                      data={"chat_id": TELEGRAM_CHAT_ID, "text": msg},
+                      timeout=10
+                  )
+              except:
+                  pass
 
+          client = Groq(api_key=GROQ_API_KEY)
           TEMAS = [
               "lluvia en ventana de noche para estudiar",
               "lofi con lluvia para concentrarse",
@@ -164,12 +217,11 @@ jobs:
           ]
           tema = random.choice(TEMAS)
 
-          prompt = f"""Genera metadata VIRAL para un livestream de YouTube de musica lofi con lluvia, tema: "{tema}".
-
+          prompt = f"""Genera metadata VIRAL para livestream de YouTube de musica lofi con lluvia, tema: "{tema}".
 JSON con:
-- titulo: max 80 chars, viral, emojis, incluye "EN VIVO" o "LIVE" o "24/7", ejemplo: "LIVE: Lluvia + Lofi 24/7 para Estudiar y Concentrarse"
-- descripcion: 300 palabras emotiva, beneficios del lofi, call to action suscribirse, hashtags al final
-- comentario_inicio: mensaje corto y motivador para publicar al inicio del live, max 200 chars
+- titulo: max 80 chars, viral, incluye LIVE o EN VIVO o 24/7, ejemplo: "LIVE: Lluvia + Lofi 24/7 para Estudiar y Concentrarse"
+- descripcion: 300 palabras emotiva con beneficios del lofi y call to action suscribirse, hashtags al final
+- comentario_inicio: mensaje motivador corto para publicar al inicio del live, max 150 chars
 """
           r = client.chat.completions.create(
               model="llama-3.3-70b-versatile",
@@ -177,11 +229,9 @@ JSON con:
               response_format={"type": "json_object"},
               max_tokens=1000
           )
-          import json
           meta = json.loads(r.choices[0].message.content, strict=False)
 
           with open("token.pickle", "rb") as f:
-              import pickle
               creds = pickle.load(f)
           if creds.expired and creds.refresh_token:
               creds.refresh(Request())
@@ -189,7 +239,7 @@ JSON con:
 
           titulo = meta["titulo"].encode("ascii","ignore").decode()
           descripcion = meta["descripcion"].encode("ascii","ignore").decode()
-          comentario = meta.get("comentario_inicio","Bienvenidos al live de FogWindowBeats! Suscribete para mas lofi todos los dias.").encode("ascii","ignore").decode()
+          comentario = meta.get("comentario_inicio","Bienvenidos! Suscribete para mas lofi todos los dias.").encode("ascii","ignore").decode()
 
           broadcast = service.liveBroadcasts().insert(
               part="snippet,status,contentDetails",
@@ -223,11 +273,7 @@ JSON con:
                   part="snippet,cdn",
                   body={
                       "snippet": {"title": "FogWindowBeats Stream"},
-                      "cdn": {
-                          "frameRate": "24fps",
-                          "ingestionType": "rtmp",
-                          "resolution": "1080p"
-                      }
+                      "cdn": {"frameRate": "24fps", "ingestionType": "rtmp", "resolution": "1080p"}
                   }
               ).execute()
               stream_id = stream["id"]
@@ -238,33 +284,35 @@ JSON con:
               streamId=stream_id
           ).execute()
 
+          try:
+              service.thumbnails().set(
+                  videoId=broadcast_id,
+                  media_body=MediaFileUpload("assets/live_thumbnail.jpg", mimetype="image/jpeg")
+              ).execute()
+              print("Thumbnail aplicado al broadcast")
+          except Exception as e:
+              print(f"Error thumbnail: {e}")
+
           with open("broadcast_id.txt", "w") as f:
               f.write(broadcast_id)
           with open("live_comment.txt", "w") as f:
               f.write(comentario)
 
-          def send_telegram(msg):
-              try:
-                  requests.post(
-                      f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-                      data={"chat_id": TELEGRAM_CHAT_ID, "text": msg},
-                      timeout=10
-                  )
-              except:
-                  pass
-
           send_telegram(f"LIVE iniciando\n{titulo}\nhttps://youtu.be/{broadcast_id}")
-          print(f"Broadcast creado: {broadcast_id}")
-          print(f"Titulo: {titulo}")
+          print(f"Broadcast: {broadcast_id} | Titulo: {titulo}")
           PYEOF
 
       - name: Iniciar livestream 11 horas
         env:
           YOUTUBE_STREAM_KEY: ${{ secrets.YOUTUBE_STREAM_KEY }}
         run: |
+          find assets/live_videos -name "*.mp4" | sort > live_video_list.txt
+          find assets/audio_lofi -name "*.mp3" | sort > live_audio_list.txt
+          while IFS= read -r f; do echo "file '$f'"; done < live_video_list.txt > live_video_concat.txt
+          while IFS= read -r f; do echo "file '$f'"; done < live_audio_list.txt > live_audio_concat.txt
           ffmpeg \
-            -f concat -safe 0 -stream_loop -1 -i <(for f in assets/live_videos/*.mp4; do echo "file '$f'"; done) \
-            -f concat -safe 0 -stream_loop -1 -i <(for f in assets/audio_lofi/*.mp3; do echo "file '$f'"; done) \
+            -stream_loop -1 -f concat -safe 0 -i live_video_concat.txt \
+            -stream_loop -1 -f concat -safe 0 -i live_audio_concat.txt \
             -vf "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=24,format=yuv420p,drawtext=text=FogWindowBeats:fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:fontsize=38:fontcolor=white@0.65:x=(w-text_w)/2:y=25:shadowcolor=black@0.6:shadowx=2:shadowy=2" \
             -c:v libx264 -preset veryfast -b:v 3000k -maxrate 3000k -bufsize 6000k \
             -r 24 -g 48 -keyint_min 48 \
@@ -272,7 +320,7 @@ JSON con:
             -t 39600 \
             -f flv "rtmp://a.rtmp.youtube.com/live2/${{ secrets.YOUTUBE_STREAM_KEY }}" &
           FFMPEG_PID=$!
-          sleep 30
+          sleep 45
           python - <<'PYEOF'
           import pickle, os
           from googleapiclient.discovery import build

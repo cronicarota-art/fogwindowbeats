@@ -446,6 +446,28 @@ def pipeline_largo(tipo, service, tmp):
     add_to_playlist(service, video_id, tipo)
     time.sleep(5)
     post_comment(service, video_id, random.choice(COMENTARIOS_LARGO))
+    try:
+        end_ms = duration * 1000
+        start_ms = max(0, end_ms - 20000)
+        service.videos().update(
+            part="suggestions",
+            body={
+                "id": video_id,
+                "suggestions": {
+                    "addScreenElements": [
+                        {
+                            "type": "subscribeLink",
+                            "position": {"type": "corner", "cornerPosition": "topLeft"},
+                            "startOffsetMs": start_ms,
+                            "durationMs": 20000
+                        }
+                    ]
+                }
+            }
+        ).execute()
+        print("Pantalla final agregada")
+    except Exception as e:
+        print(f"Error pantalla final: {e}")
     for f in [audio_out, video_raw, video_final, thumbnail]:
         try: f.unlink()
         except: pass
