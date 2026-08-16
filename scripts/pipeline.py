@@ -193,12 +193,10 @@ def build_video_horizontal(tipo, duration, output_path):
     concat_list = BASE / "video_concat.txt"
     write_concat(video_files, concat_list)
     grade = COLOR_GRADE.get(tipo, "")
-    vf_h = "scale=8000:4500:force_original_aspect_ratio=increase"
-    vf_h += ",zoompan=z='min(zoom+0.0003,1.3)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=1920x1080:fps=24"
+    vf_h = "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1"
     if grade:
         vf_h += f",{grade}"
-    vf_h += ",format=yuv420p"
-    vf_h += ",fade=t=in:st=0:d=1,fade=t=out:st={dur_fade}:d=1".format(dur_fade=max(0, duration-1))
+    vf_h += ",fps=24,format=yuv420p"
     run_ffmpeg([
         "ffmpeg", "-y", "-stream_loop", "-1",
         "-f", "concat", "-safe", "0",
