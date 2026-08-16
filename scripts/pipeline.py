@@ -615,7 +615,8 @@ def pipeline_largo(tipo, service, tmp):
     except Exception as e:
         print(f"Error pantalla final: {e}")
     try:
-        community_text = f"Nuevo video disponible! {metadata[\"titulo\"]} - Escuchalo ahora en FogWindowBeats. Link en el canal. #lofi #estudiar #concentracion"
+        titulo_community = metadata.get("titulo", "nuevo lofi")
+        community_text = f"Nuevo video disponible! {titulo_community} - Escuchalo ahora en FogWindowBeats. Link en el canal. #lofi #estudiar #concentracion"
         post_community(service, community_text[:500])
     except Exception as e:
         print(f"Error comunidad: {e}")
