@@ -99,6 +99,15 @@ COLORES_TIPO = {
 WATERMARK_H = "drawtext=text=FogWindowBeats:fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:fontsize=38:fontcolor=white@0.65:x=(w-text_w)/2:y=25:shadowcolor=black@0.6:shadowx=2:shadowy=2"
 WATERMARK_V = "drawtext=text=FogWindowBeats:fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:fontsize=46:fontcolor=white@0.65:x=(w-text_w)/2:y=25:shadowcolor=black@0.6:shadowx=2:shadowy=2"
 
+COLOR_GRADE = {
+    "lofi_estudio":    "colortemperature=temperature=4500",
+    "lluvia_lofi":     "colorbalance=bs=0.1:bm=0.05:bh=0.05",
+    "jazz_lofi":       "colortemperature=temperature=3800",
+    "naturaleza":      "colorbalance=gs=0.05:gm=0.05:gh=0.05",
+    "lofi_dormir":     "colorbalance=bs=0.08:bm=0.05:bh=0.05",
+    "piano_relajante": "colortemperature=temperature=4200"
+}
+
 def clean_text(text):
     return text.encode("ascii", "ignore").decode("ascii")
 
@@ -183,18 +192,25 @@ def build_video_horizontal(tipo, duration, output_path):
     random.shuffle(video_files)
     concat_list = BASE / "video_concat.txt"
     write_concat(video_files, concat_list)
+    grade = COLOR_GRADE.get(tipo, "")
+    vf_h = "scale=8000:4500:force_original_aspect_ratio=increase"
+    vf_h += ",zoompan=z='min(zoom+0.0003,1.3)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=1920x1080:fps=24"
+    if grade:
+        vf_h += f",{grade}"
+    vf_h += ",format=yuv420p"
+    vf_h += ",fade=t=in:st=0:d=1,fade=t=out:st={dur_fade}:d=1".format(dur_fade=max(0, duration-1))
     run_ffmpeg([
         "ffmpeg", "-y", "-stream_loop", "-1",
         "-f", "concat", "-safe", "0",
         "-i", str(concat_list),
         "-t", str(duration),
-        "-vf", "scale=8000:4500:force_original_aspect_ratio=increase,zoompan=z='min(zoom+0.0003,1.3)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=1920x1080:fps=24,format=yuv420p",
+        "-vf", vf_h,
         "-r", "24", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "30",
         "-vsync", "cfr", "-an", str(output_path)
     ])
     concat_list.unlink(missing_ok=True)
 
-def build_video_vertical(tipo, duration, output_path):
+def build_video_vertical(tipo, duration, output_path, frase=''):
     video_files = get_video_files_vertical()
     if not video_files:
         video_files = get_video_files(tipo)
@@ -203,12 +219,28 @@ def build_video_vertical(tipo, duration, output_path):
     random.shuffle(video_files)
     concat_list = BASE / "video_concat_v.txt"
     write_concat(video_files, concat_list)
+    words = frase.encode("ascii","ignore").decode().split()
+    drawtext_filters = []
+    for i, word in enumerate(words):
+        start = i * 0.4
+        safe_word = word.replace("'", "").replace(":", "")
+        drawtext_filters.append(
+            f"drawtext=text='{safe_word}'"
+            f":fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+            f":fontsize=70:fontcolor=white@1.0"
+            f":x=(w-text_w)/2:y=(h-text_h)/2+{i*80-len(words)*40}"
+            f":enable='between(t,{start},{start+duration})'"
+            f":alpha='if(lt(t-{start},0.3),(t-{start})/0.3,1)'"
+            f":shadowcolor=black@0.8:shadowx=3:shadowy=3"
+        )
+    word_filter = ",".join(drawtext_filters) if drawtext_filters else "null"
+    vf_v = f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=30,format=yuv420p,{word_filter}"
     run_ffmpeg([
         "ffmpeg", "-y", "-stream_loop", "-1",
         "-f", "concat", "-safe", "0",
         "-i", str(concat_list),
         "-t", str(duration),
-        "-vf", "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=30,format=yuv420p",
+        "-vf", vf_v,
         "-r", "30", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
         "-vsync", "cfr", "-an", str(output_path)
     ])
@@ -255,7 +287,13 @@ def extract_frame(video_path, output_path, width, height):
         str(output_path)
     ])
 
-def create_thumbnail_largo(tipo, titulo, duration_h, video_path, output_path):
+AB_STYLE = ["cinematic", "minimal"]
+
+def create_thumbnail_largo(tipo, titulo, duration_h, video_path, output_path, style=None):
+    if style is None:
+        import random
+        style = random.choice(AB_STYLE)
+    print(f"Thumbnail style: {style}")
     frame_path = output_path.parent / "frame_tmp.jpg"
     try:
         extract_frame(video_path, frame_path, 1280, 720)
@@ -424,6 +462,42 @@ def post_community(service, text):
     except Exception as e:
         print(f"Error comunidad: {e}")
 
+def auto_reply_comments(service, video_id):
+    RESPUESTAS = [
+        "Gracias por escuchar! Suscribete para mas lofi todos los dias",
+        "Nos alegra que lo disfrutes! Activa la campana para no perderte nada",
+        "Que bueno tenerte aqui! Comparte con alguien que necesite concentrarse",
+        "Gracias! Hay mas contenido lofi en el canal para ti",
+        "Bienvenido a FogWindowBeats! Suscribete para mas vibes lofi"
+    ]
+    import random, time
+    try:
+        time.sleep(30)
+        comments = service.commentThreads().list(
+            part="snippet",
+            videoId=video_id,
+            maxResults=10,
+            order="time"
+        ).execute()
+        for item in comments.get("items", []):
+            comment_id = item["id"]
+            try:
+                service.comments().insert(
+                    part="snippet",
+                    body={
+                        "snippet": {
+                            "parentId": comment_id,
+                            "textOriginal": random.choice(RESPUESTAS)
+                        }
+                    }
+                ).execute()
+                print(f"Respuesta enviada a {comment_id}")
+                time.sleep(2)
+            except Exception as e:
+                print(f"Error respuesta: {e}")
+    except Exception as e:
+        print(f"Error auto_reply: {e}")
+
 def upload_youtube(service, video_path, thumbnail_path, metadata):
     body = {
         "snippet": {
@@ -502,6 +576,7 @@ def pipeline_largo(tipo, service, tmp):
         post_community(service, community_text[:500])
     except Exception as e:
         print(f"Error comunidad: {e}")
+    auto_reply_comments(service, video_id)
     for f in [audio_out, video_raw, video_with_intro, video_final, thumbnail]:
         try: f.unlink()
         except: pass
@@ -518,7 +593,7 @@ def pipeline_short(tipo, service, tmp):
     send_telegram(f"<b>SHORT</b> | {tipo} | {duration}s")
     build_audio(tipo, duration, audio_out)
     send_telegram("Video vertical...")
-    build_video_vertical(tipo, duration, video_raw)
+    build_video_vertical(tipo, duration, video_raw, frase=frase)
     send_telegram("Mezclando AV + watermark...")
     merge_av(video_raw, audio_out, video_final, vertical=True)
     send_telegram("Metadata + thumbnail...")
@@ -529,10 +604,28 @@ def pipeline_short(tipo, service, tmp):
     add_to_playlist(service, video_id, tipo)
     time.sleep(5)
     post_comment(service, video_id, random.choice(COMENTARIOS_SHORT))
+    auto_reply_comments(service, video_id)
     for f in [audio_out, video_raw, video_final, thumbnail]:
         try: f.unlink()
         except: pass
     return video_id, metadata["titulo"]
+
+def get_best_publish_time(service):
+    try:
+        from datetime import datetime, timezone
+        report = service.reports().query(
+            ids="channel==MINE",
+            startDate="2026-01-01",
+            endDate="2026-12-31",
+            metrics="views",
+            dimensions="day",
+            sort="-views",
+            maxResults=7
+        ).execute()
+        print(f"Analytics consultado: {report}")
+    except Exception as e:
+        print(f"Analytics no disponible: {e}")
+    return None
 
 def main():
     env_tipo = os.environ.get("VIDEO_TIPO")
