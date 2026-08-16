@@ -1,4 +1,4 @@
-import os, random, pickle, subprocess, requests, json, glob, textwrap, re, time
+import os, random, pickle, subprocess, requests, json, glob, textwrap, re, time, shutil
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 from groq import Groq
@@ -154,18 +154,20 @@ def run_ffmpeg(args):
     if result.returncode != 0:
         raise Exception(f"FFmpeg fallo codigo {result.returncode}")
 
+def write_concat(files, path):
+    with open(path, "w", encoding="utf-8") as f:
+        for vf in files:
+            f.write(f"file '{vf}'\n")
+
 def build_audio(tipo, duration, output_path):
     audio_files = get_audio_files(tipo)
     if not audio_files:
         raise Exception(f"No hay audios para {tipo}")
     random.shuffle(audio_files)
     concat_list = BASE / "audio_concat.txt"
-    with open(concat_list, "w", encoding="utf-8") as f:
-        for af in audio_files:
-            f.write(f"file '{af}'\n")
+    write_concat(audio_files, concat_list)
     run_ffmpeg([
-        "ffmpeg", "-y",
-        "-stream_loop", "-1",
+        "ffmpeg", "-y", "-stream_loop", "-1",
         "-f", "concat", "-safe", "0",
         "-i", str(concat_list),
         "-t", str(duration),
@@ -180,16 +182,13 @@ def build_video_horizontal(tipo, duration, output_path):
         raise Exception(f"No hay videos para {tipo}")
     random.shuffle(video_files)
     concat_list = BASE / "video_concat.txt"
-    with open(concat_list, "w", encoding="utf-8") as f:
-        for vf in video_files:
-            f.write(f"file '{vf}'\n")
+    write_concat(video_files, concat_list)
     run_ffmpeg([
-        "ffmpeg", "-y",
-        "-stream_loop", "-1",
+        "ffmpeg", "-y", "-stream_loop", "-1",
         "-f", "concat", "-safe", "0",
         "-i", str(concat_list),
         "-t", str(duration),
-        "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=24,format=yuv420p",
+        "-vf", "scale=8000:4500:force_original_aspect_ratio=increase,zoompan=z='min(zoom+0.0003,1.3)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=1920x1080:fps=24,format=yuv420p",
         "-r", "24", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "30",
         "-vsync", "cfr", "-an", str(output_path)
     ])
@@ -203,12 +202,9 @@ def build_video_vertical(tipo, duration, output_path):
         raise Exception("No hay videos verticales")
     random.shuffle(video_files)
     concat_list = BASE / "video_concat_v.txt"
-    with open(concat_list, "w", encoding="utf-8") as f:
-        for vf in video_files:
-            f.write(f"file '{vf}'\n")
+    write_concat(video_files, concat_list)
     run_ffmpeg([
-        "ffmpeg", "-y",
-        "-stream_loop", "-1",
+        "ffmpeg", "-y", "-stream_loop", "-1",
         "-f", "concat", "-safe", "0",
         "-i", str(concat_list),
         "-t", str(duration),
@@ -220,15 +216,34 @@ def build_video_vertical(tipo, duration, output_path):
 
 def merge_av(video_path, audio_path, output_path, vertical=False):
     wm = WATERMARK_V if vertical else WATERMARK_H
+    overlay = ASSETS / "particle_overlay.png"
+    if not vertical and overlay.exists():
+        vf = f"{wm},movie={str(overlay)}[ov];[in][ov]overlay=0:0"
+    else:
+        vf = wm
     run_ffmpeg([
         "ffmpeg", "-y",
         "-i", str(video_path),
         "-i", str(audio_path),
-        "-vf", wm,
+        "-vf", vf,
         "-c:v", "libx264", "-preset", "ultrafast", "-crf", "30",
         "-c:a", "copy",
         "-shortest", str(output_path)
     ])
+
+def add_intro(video_path, output_path):
+    intro = ASSETS / "intro.mp4"
+    if not intro.exists():
+        shutil.copy(str(video_path), str(output_path))
+        return
+    concat_list = BASE / "intro_concat.txt"
+    write_concat([str(intro), str(video_path)], concat_list)
+    run_ffmpeg([
+        "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+        "-i", str(concat_list),
+        "-c", "copy", str(output_path)
+    ])
+    concat_list.unlink(missing_ok=True)
 
 def extract_frame(video_path, output_path, width, height):
     run_ffmpeg([
@@ -284,8 +299,8 @@ def create_thumbnail_short(tipo, frase, video_path, output_path):
         img = Image.open(str(frame_path)).convert("RGB").resize((1080, 1920))
     except:
         img = Image.new("RGB", (1080, 1920), color=bg)
-    overlay = Image.new("RGBA", (1080, 1920), (0, 0, 0, 110))
-    img = Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB")
+    overlay_img = Image.new("RGBA", (1080, 1920), (0, 0, 0, 110))
+    img = Image.alpha_composite(img.convert("RGBA"), overlay_img).convert("RGB")
     draw = ImageDraw.Draw(img)
     draw.ellipse([(-100,600),(500,1200)], fill=(*c1,60))
     draw.ellipse([(600,900),(1200,1500)], fill=(*c2,50))
@@ -329,18 +344,19 @@ Genera metadata VIRAL para video tipo "{tipo}".
 
 REGLAS TITULO:
 - Maximo 80 caracteres
+- Mezcla espanol e ingles naturalmente, ejemplo: "Lluvia Lofi para Estudiar - Rain Beats to Focus"
 - NO incluyas la duracion en el titulo
 - Enfocate en EMOCION y BENEFICIO
-- Estilo: "La Lluvia Perfecta para Concentrarte", "Modo Focus: Lofi para Trabajar sin Distracciones"
+- Estilo: "Rain Lofi para Concentrarte sin Parar", "Study Beats - Lofi para Trabajar sin Distracciones"
 - NUNCA: "Musica Lofi 3.0 horas", "Lofi Mix"
 
 TIPO: {tipo}
-EMOCIONES: lofi_estudio=concentracion cafe madrugada, lluvia_lofi=lluvia cozy noche, jazz_lofi=elegancia cafe nocturno, naturaleza=paz bosque, lofi_dormir=relajacion calma, piano_relajante=belleza emocion
+EMOCIONES: lofi_estudio=concentracion cafe madrugada productividad, lluvia_lofi=lluvia cozy noche tormenta, jazz_lofi=elegancia cafe nocturno smooth, naturaleza=paz bosque aire fresco, lofi_dormir=relajacion profunda calma, piano_relajante=belleza emocion alma
 
-JSON:
-- titulo: string viral
+JSON con exactamente estas claves:
+- titulo: string viral bilingue
 - descripcion: 500 palabras emotiva, menciona {canal}, timestamps:\n{timestamps}\n15+ hashtags al final
-- tags: lista de 30 strings SEO incluyendo lofi, musica para estudiar, lofi hip hop, chill beats, study music, focus music
+- tags: lista de 30 strings SEO incluyendo OBLIGATORIAMENTE: "lofi hip hop radio", "beats to relax study to", "musica para estudiar", "lofi hip hop", "chill beats", "study music 2026", "lofi music", "musica relajante", "concentration music", "focus music", "rain lofi", "lofi beats", "chillhop", "ambient music", "background music"
 """
     r = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
@@ -357,15 +373,15 @@ Genera metadata para Short tipo "{tipo}", frase: "{frase}"
 
 REGLAS TITULO:
 - Maximo 60 chars
-- DEBE tener 2-3 emojis
-- Estilo casual minusculas
+- DEBE tener 2-3 emojis relevantes
+- Estilo casual minusculas con emojis
 - Ejemplos: "pov: son las 3am y tienes que entregar", "modo biblioteca activado"
 - NUNCA sin emojis
 
-JSON:
-- titulo: string viral con emojis
-- descripcion: 3 lineas + hashtags #lofi #shorts #estudiar #concentracion #fyp #parati #musicalofi #lofihiphop
-- tags: lista de 15 tags cortos
+JSON con exactamente estas claves:
+- titulo: string viral casual con emojis
+- descripcion: 3 lineas emotivas + hashtags #lofi #shorts #estudiar #concentracion #fyp #parati #musicalofi #lofihiphop #chillbeats #studymusic
+- tags: lista de 15 tags cortos lofi shorts viral
 """
     r = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
@@ -394,9 +410,19 @@ def post_comment(service, video_id, comment_text):
             part="snippet",
             body={"snippet": {"videoId": video_id, "topLevelComment": {"snippet": {"textOriginal": comment_text}}}}
         ).execute()
-        print(f"Comentario publicado")
+        print("Comentario publicado")
     except Exception as e:
         print(f"Error comentario: {e}")
+
+def post_community(service, text):
+    try:
+        service.communityPosts().insert(
+            part="snippet",
+            body={"snippet": {"textOriginal": text}}
+        ).execute()
+        print("Post de comunidad publicado")
+    except Exception as e:
+        print(f"Error comunidad: {e}")
 
 def upload_youtube(service, video_path, thumbnail_path, metadata):
     body = {
@@ -430,14 +456,17 @@ def pipeline_largo(tipo, service, tmp):
     print(f"LARGO | tipo={tipo} | {duration_h}h")
     audio_out = tmp / "audio.aac"
     video_raw = tmp / "video_raw.mp4"
+    video_with_intro = tmp / "video_intro.mp4"
     video_final = tmp / "video_final.mp4"
     thumbnail = tmp / "thumbnail.jpg"
     send_telegram(f"<b>LARGO</b> | {tipo} | {duration_h}h")
     build_audio(tipo, duration, audio_out)
     send_telegram("Construyendo video...")
     build_video_horizontal(tipo, duration, video_raw)
-    send_telegram("Mezclando AV + watermark...")
-    merge_av(video_raw, audio_out, video_final, vertical=False)
+    send_telegram("Agregando intro...")
+    add_intro(video_raw, video_with_intro)
+    send_telegram("Mezclando AV + watermark + overlay...")
+    merge_av(video_with_intro, audio_out, video_final, vertical=False)
     send_telegram("Metadata + thumbnail...")
     metadata = generate_metadata_largo(tipo, duration_h)
     create_thumbnail_largo(tipo, metadata["titulo"], duration_h, video_raw, thumbnail)
@@ -468,7 +497,12 @@ def pipeline_largo(tipo, service, tmp):
         print("Pantalla final agregada")
     except Exception as e:
         print(f"Error pantalla final: {e}")
-    for f in [audio_out, video_raw, video_final, thumbnail]:
+    try:
+        community_text = f"Nuevo video disponible! {metadata[\"titulo\"]} - Escuchalo ahora en FogWindowBeats. Link en el canal. #lofi #estudiar #concentracion"
+        post_community(service, community_text[:500])
+    except Exception as e:
+        print(f"Error comunidad: {e}")
+    for f in [audio_out, video_raw, video_with_intro, video_final, thumbnail]:
         try: f.unlink()
         except: pass
     return video_id, metadata["titulo"]
