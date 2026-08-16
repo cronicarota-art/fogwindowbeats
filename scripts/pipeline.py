@@ -84,7 +84,11 @@ def send_telegram(msg):
     try:
         requests.post(
             f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-            data={"chat_id": TELEGRAM_CHAT_ID, "text": clean_for_telegram(msg)},
+            data={
+                "chat_id": TELEGRAM_CHAT_ID,
+                "text": clean_for_telegram(msg),
+                "parse_mode": "HTML"
+            },
             timeout=10
         )
     except:
@@ -304,9 +308,10 @@ Genera metadata VIRAL para video tipo "{tipo}", duracion {duration_h} horas.
 REGLAS TITULO (MUY IMPORTANTE):
 - Maximo 80 caracteres
 - Irresistible, emocional, que genere clic inmediato
-- Incluye duracion exacta: {duration_h} horas
-- Estilo: "3 Horas de Lluvia + Lofi para Estudiar Sin Parar", "No Podras Dejar de Estudiar - 4 Horas Lofi"
-- NUNCA: "Musica Lofi para Estudiar 3.0 horas"
+- NO incluyas la duracion en el titulo
+- Enfocate en la EMOCION y el BENEFICIO, no en las horas
+- Estilo VIRAL: "La Lluvia Perfecta para Concentrarte sin Parar", "El Lofi que Necesitas para Estudiar Hoy", "Modo Focus: Musica Lofi para Trabajar sin Distracciones"
+- NUNCA: "Musica Lofi para Estudiar 3.0 horas", "Lofi Mix 2 horas"
 
 TIPO: {tipo}
 EMOCIONES: lofi_estudio=concentracion cafe madrugada productividad, lluvia_lofi=lluvia cozy noche tormenta perfecta, jazz_lofi=elegancia cafe nocturno smooth, naturaleza=paz bosque aire fresco, lofi_dormir=relajacion profunda calma mente, piano_relajante=belleza emocion alma
@@ -334,7 +339,7 @@ REGLAS TITULO (MUY IMPORTANTE):
 - DEBE tener 2-3 emojis relevantes
 - Genera curiosidad o identificacion inmediata
 - Estilo casual minusculas con emojis
-- Ejemplos BUENOS: "pov: son las 3am y tienes que entregar 🌙📚", "cuando el lofi te salva la vida 🎧✨", "modo biblioteca activado 📖☕"
+- Ejemplos BUENOS: "pov: son las 3am y tienes que entregar ÃƒÂ°Ã…Â¸Ã…â€™Ã¢â€žÂ¢ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã…Â¡", "cuando el lofi te salva la vida ÃƒÂ°Ã…Â¸Ã…Â½Ã‚Â§ÃƒÂ¢Ã…â€œÃ‚Â¨", "modo biblioteca activado ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã¢â‚¬â€œÃƒÂ¢Ã‹Å“Ã¢â‚¬Â¢"
 - NUNCA titulo sin emojis
 
 JSON con exactamente estas claves:
@@ -407,7 +412,7 @@ def pipeline_largo(tipo, service, tmp):
     video_raw = tmp / "video_raw.mp4"
     video_final = tmp / "video_final.mp4"
     thumbnail = tmp / "thumbnail.jpg"
-    send_telegram(f"LARGO iniciando | {tipo} | {duration_h}h")
+    send_telegram(f"<b>LARGO</b> | {tipo} | {duration_h}h")
     build_audio(tipo, duration, audio_out)
     send_telegram("Construyendo video...")
     build_video_horizontal(tipo, duration, video_raw)
@@ -457,14 +462,14 @@ def main():
     env_tipo = os.environ.get("VIDEO_TIPO")
     tipo_largo = env_tipo if env_tipo else random.choice(TIPOS)
     tipo_short = env_tipo if env_tipo else random.choice(TIPOS)
-    send_telegram(f"FogWindowBeats arrancando | LARGO: {tipo_largo} | SHORT: {tipo_short}")
+    send_telegram(f"<b>FogWindowBeats</b> iniciando\n<b>Largo:</b> {tipo_largo}\n<b>Short:</b> {tipo_short}")
     tmp = BASE / "tmp"
     tmp.mkdir(exist_ok=True)
     service = get_youtube_service()
     try:
         vid_l, titulo_l = pipeline_largo(tipo_largo, service, tmp)
         url_l = f"https://youtu.be/{vid_l}"
-        send_telegram(f"LARGO publicado\n{clean_text(titulo_l)}\n{url_l}")
+        send_telegram(f"<b>LARGO publicado</b>\n{url_l}")
         print(f"LARGO: {url_l}")
     except Exception as e:
         send_telegram(f"Error LARGO: {e}")
@@ -472,7 +477,7 @@ def main():
     try:
         vid_s, titulo_s = pipeline_short(tipo_short, service, tmp)
         url_s = f"https://youtube.com/shorts/{vid_s}"
-        send_telegram(f"SHORT publicado\n{clean_text(titulo_s)}\n{url_s}")
+        send_telegram(f"<b>SHORT publicado</b>\n{url_s}")
         print(f"SHORT: {url_s}")
     except Exception as e:
         send_telegram(f"Error SHORT: {e}")
