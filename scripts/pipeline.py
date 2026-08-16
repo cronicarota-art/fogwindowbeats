@@ -76,11 +76,15 @@ WATERMARK_V = "drawtext=text=FogWindowBeats:fontfile=/usr/share/fonts/truetype/d
 def clean_text(text):
     return text.encode("ascii", "ignore").decode("ascii")
 
+def clean_for_telegram(text):
+    import re
+    return re.sub(r"[^\x00-\x7F]+", "", text).strip()
+
 def send_telegram(msg):
     try:
         requests.post(
             f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-            data={"chat_id": TELEGRAM_CHAT_ID, "text": clean_text(msg)},
+            data={"chat_id": TELEGRAM_CHAT_ID, "text": clean_for_telegram(msg)},
             timeout=10
         )
     except:
@@ -327,9 +331,11 @@ Genera metadata para Short tipo "{tipo}", frase central: "{frase}"
 
 REGLAS TITULO (MUY IMPORTANTE):
 - Maximo 60 chars
+- DEBE tener 2-3 emojis relevantes
 - Genera curiosidad o identificacion inmediata
-- Estilo casual minusculas
-- Ejemplos BUENOS: "pov: son las 3am y tienes que entregar", "cuando el lofi te salva la vida", "modo biblioteca activado"
+- Estilo casual minusculas con emojis
+- Ejemplos BUENOS: "pov: son las 3am y tienes que entregar 🌙📚", "cuando el lofi te salva la vida 🎧✨", "modo biblioteca activado 📖☕"
+- NUNCA titulo sin emojis
 
 JSON con exactamente estas claves:
 - titulo: string viral casual en espanol minusculas
