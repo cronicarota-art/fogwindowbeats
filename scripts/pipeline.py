@@ -13,7 +13,7 @@ TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
 TIPOS = ["lofi_estudio", "lluvia_lofi", "jazz_lofi", "naturaleza", "lofi_dormir", "piano_relajante"]
-DURACIONES_LARGO = [7200, 10800, 14400, 21600, 28800]
+DURACIONES_LARGO = [3600, 5400, 7200]
 DURACIONES_SHORT = [40, 45, 50, 60]
 
 PLAYLIST_IDS = {
