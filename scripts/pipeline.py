@@ -248,7 +248,8 @@ def merge_av(video_path, audio_path, output_path, vertical=False):
     wm = WATERMARK_V if vertical else WATERMARK_H
     overlay = ASSETS / "particle_overlay.png"
     if not vertical and overlay.exists():
-        vf = f"{wm},movie={str(overlay)}[ov];[in][ov]overlay=0:0"
+        overlay_safe = str(overlay).replace("\\", "/")
+        vf = wm + ",movie=" + overlay_safe + "[ov];[in][ov]overlay=0:0"
     else:
         vf = wm
     run_ffmpeg([
@@ -423,7 +424,7 @@ JSON con exactamente estas claves:
 - tags: lista de 30 strings SEO incluyendo OBLIGATORIAMENTE: "lofi hip hop radio", "beats to relax study to", "musica para estudiar", "lofi hip hop", "chill beats", "study music 2026", "lofi music", "musica relajante", "concentration music", "focus music", "rain lofi", "lofi beats", "chillhop", "ambient music", "background music"
 """
     r = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
+        model="llama-3.1-8b-instant",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
         max_tokens=2000
@@ -448,7 +449,7 @@ JSON con exactamente estas claves:
 - tags: lista de 15 tags cortos lofi shorts viral
 """
     r = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
+        model="llama-3.1-8b-instant",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
         max_tokens=600
