@@ -422,9 +422,17 @@ JSON con exactamente estas claves:
         model="qwen/qwen3.6-27b",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
-        max_tokens=2000
+        max_tokens=2000,
+        reasoning_effort="none"
     )
-    return json.loads(r.choices[0].message.content, strict=False)
+    raw = r.choices[0].message.content
+    import re as _re
+    raw = _re.sub(r"<think>.*?</think>", "", raw, flags=_re.DOTALL).strip()
+    start = raw.find("{")
+    end = raw.rfind("}") + 1
+    if start >= 0 and end > start:
+        raw = raw[start:end]
+    return json.loads(raw, strict=False)
 
 def generate_metadata_short(tipo, frase):
     client = Groq(api_key=GROQ_API_KEY)
@@ -447,9 +455,17 @@ JSON con exactamente estas claves:
         model="qwen/qwen3.6-27b",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
-        max_tokens=600
+        max_tokens=600,
+        reasoning_effort="none"
     )
-    return json.loads(r.choices[0].message.content, strict=False)
+    raw = r.choices[0].message.content
+    import re as _re
+    raw = _re.sub(r"<think>.*?</think>", "", raw, flags=_re.DOTALL).strip()
+    start = raw.find("{")
+    end = raw.rfind("}") + 1
+    if start >= 0 and end > start:
+        raw = raw[start:end]
+    return json.loads(raw, strict=False)
 
 def add_to_playlist(service, video_id, tipo):
     playlist_id = PLAYLIST_IDS.get(tipo)
